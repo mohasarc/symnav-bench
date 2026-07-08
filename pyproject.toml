@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "symnav-bench"
+version = "0.1.0"
+description = "Dockerized DeepSWE/Pier harness for comparing agents with and without symnav."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+  "datacurve-pier",
+  "matplotlib",
+  "PyYAML",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
+[project.scripts]
+symnav-bench = "symnav_bench.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/symnav_bench"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
