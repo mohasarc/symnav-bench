@@ -5,7 +5,8 @@ ARG SYMNAV_BENCH_VERSION=0.1.0
 ENV SYMNAV_BENCH_VERSION=${SYMNAV_BENCH_VERSION}
 ENV DEEPSWE_ROOT=/work/deep-swe
 
-RUN apk add --no-cache bash git python3 py3-pip nodejs npm pnpm
+RUN apk upgrade --no-cache \
+  && apk add --no-cache bash git python3 py3-pip nodejs npm pnpm
 
 WORKDIR /opt/symnav-bench
 COPY pyproject.toml README.md LICENSE ./
