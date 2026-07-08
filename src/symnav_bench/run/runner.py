@@ -94,7 +94,11 @@ class CellRunner:
 
 
 def subprocess_pier_run(job_yaml: Path, jobs_dir: Path) -> None:
-    subprocess.run(["pier", "run", "--config", str(job_yaml), "--out", str(jobs_dir)], check=True)
+    subprocess.run(build_pier_run_command(job_yaml, jobs_dir), check=True)
+
+
+def build_pier_run_command(job_yaml: Path, jobs_dir: Path) -> list[str]:
+    return ["pier", "run", "--config", str(job_yaml), "--jobs-dir", str(jobs_dir), "--yes"]
 
 
 def _pier_version() -> str:

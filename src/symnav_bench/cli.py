@@ -7,6 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from symnav_bench import __version__
+from symnav_bench.cells.cell import Cell
 from symnav_bench.deepswe import TASK_SLUGS, configured_tasks_dir, ensure_deepswe_tasks
 from symnav_bench.report.cell_set import CellSet
 from symnav_bench.report.comparison import planned_comparisons
@@ -98,8 +99,7 @@ def run_command(args: argparse.Namespace) -> int:
         deep_swe_ref=args.deep_swe_ref,
         symnav_ref=symnav_sha,
     )
-    runner.run_all()
-    return 0
+    return run_exit_code(runner.run_all())
 
 
 def report_command(args: argparse.Namespace) -> int:
@@ -111,6 +111,10 @@ def report_command(args: argparse.Namespace) -> int:
 
 def split_csv(value: str) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def run_exit_code(cells: list[Cell]) -> int:
+    return 1 if any(cell.status == "error" for cell in cells) else 0
 
 
 if __name__ == "__main__":

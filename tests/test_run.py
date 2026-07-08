@@ -5,10 +5,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from symnav_bench.run.auth import validate_auth
+from symnav_bench.cli import run_exit_code
+from symnav_bench.cell_identity import CellIdentity
+from symnav_bench.cells.cell import Cell
 from symnav_bench.run.config import RunConfig
 from symnav_bench.run.job_config import build_job_yaml
 from symnav_bench.run.limits import next_backoff, parse_limit_reset
-from symnav_bench.run.runner import CellRunner
+from symnav_bench.run.runner import CellRunner, build_pier_run_command
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, Condition
 
@@ -79,6 +82,39 @@ def test_runner_continues_after_error(tmp_path) -> None:
     runner = CellRunner(config, harness=_harness(), pier=pier, sleeper=lambda seconds: None)
     cells = runner.run_all()
     assert [cell.status for cell in cells] == ["error", "completed"]
+
+
+def test_pier_run_command_uses_current_cli_output_flag(tmp_path) -> None:
+    command = build_pier_run_command(tmp_path / "job.yaml", tmp_path / "jobs")
+    assert command == [
+        "pier",
+        "run",
+        "--config",
+        str(tmp_path / "job.yaml"),
+        "--jobs-dir",
+        str(tmp_path / "jobs"),
+        "--yes",
+    ]
+
+
+def test_run_exit_code_fails_when_a_cell_errors() -> None:
+    assert run_exit_code([_cell("completed")]) == 0
+    assert run_exit_code([_cell("completed"), _cell("error")]) == 1
+
+
+def _cell(status):
+    return Cell(
+        identity=CellIdentity(AgentSpec("codex", "m", "e"), "stock", "task", 0),
+        status=status,
+        error=None,
+        solved=False,
+        rewards={},
+        usage={},
+        timing={},
+        agent_version=None,
+        harness={},
+        command_counts={},
+    )
 
 
 def _harness():
