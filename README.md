@@ -58,6 +58,11 @@ trial output, not billing records.
 
 ## DeepSWE redistribution
 
-The Docker image clones DeepSWE into `/opt/deep-swe`. Confirm the upstream
-DeepSWE license before first public GHCR push, then replace this note with the
-specific license finding and link.
+The Docker image clones DeepSWE into `/opt/deep-swe`.
+
+Redistribution permitted: no.
+
+As of 2026-07-09, the public `datacurve-ai/deep-swe` GitHub repo did not expose
+a `LICENSE` file at `main`. Do not publish a public GHCR image containing the
+tasks until upstream license or written permission explicitly permits
+redistribution.
