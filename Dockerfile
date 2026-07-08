@@ -10,13 +10,11 @@ RUN apk add --no-cache bash git python3 py3-pip nodejs npm pnpm
 WORKDIR /opt/symnav-bench
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-RUN python3 -m venv /opt/venv \
-  && /opt/venv/bin/pip install --upgrade pip \
-  && /opt/venv/bin/pip install .
+RUN python3 -m pip install --break-system-packages --upgrade pip \
+  && python3 -m pip install --break-system-packages --no-cache-dir .
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-ENV PATH=/opt/venv/bin:$PATH
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["--help"]
