@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from symnav_bench.cli import main
+from symnav_bench.deepswe import TASK_SLUGS, ensure_deepswe_tasks
 from symnav_bench.tasks import list_tasks
 
 
@@ -22,3 +23,24 @@ def test_list_tasks_cli_smoke(tmp_path, capsys) -> None:
     (tmp_path / "task").mkdir()
     assert main(["list-tasks", "--tasks-dir", str(tmp_path)]) == 0
     assert capsys.readouterr().out == "task\n"
+
+
+def test_list_tasks_cli_uses_slug_catalog_without_tasks_dir(capsys, monkeypatch) -> None:
+    monkeypatch.delenv("DEEPSWE_TASKS_DIR", raising=False)
+    assert main(["list-tasks"]) == 0
+    assert capsys.readouterr().out.splitlines() == list(TASK_SLUGS)
+
+
+def test_ensure_deepswe_tasks_clones_then_fetches_ref(tmp_path) -> None:
+    commands = []
+
+    def runner(command: list[str]) -> None:
+        commands.append(command)
+        if command[:2] == ["git", "clone"]:
+            (tmp_path / "deep-swe" / ".git").mkdir(parents=True)
+            (tmp_path / "deep-swe" / "tasks").mkdir()
+
+    tasks_dir = ensure_deepswe_tasks("abc123", root=tmp_path / "deep-swe", runner=runner)
+    assert tasks_dir == tmp_path / "deep-swe" / "tasks"
+    assert commands[0][:3] == ["git", "clone", "--depth"]
+    assert commands[1][-1] == "abc123"

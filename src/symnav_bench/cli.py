@@ -7,6 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from symnav_bench import __version__
+from symnav_bench.deepswe import TASK_SLUGS, configured_tasks_dir, ensure_deepswe_tasks
 from symnav_bench.report.cell_set import CellSet
 from symnav_bench.report.comparison import planned_comparisons
 from symnav_bench.report.render import write_report
@@ -41,13 +42,13 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command")
 
     list_parser = subcommands.add_parser("list-tasks")
-    list_parser.add_argument("--tasks-dir", type=Path, default=default_tasks_dir())
+    list_parser.add_argument("--tasks-dir", type=Path)
 
     run_parser = subcommands.add_parser("run")
     run_parser.add_argument("--agent", action="append", required=True)
     run_parser.add_argument("--conditions", default="symnav,stock")
     run_parser.add_argument("--tasks", required=True)
-    run_parser.add_argument("--tasks-dir", type=Path, default=default_tasks_dir())
+    run_parser.add_argument("--tasks-dir", type=Path)
     run_parser.add_argument("--results-dir", type=Path, required=True)
     run_parser.add_argument("--symnav-ref", default="main")
     run_parser.add_argument("--reps", type=int, default=1)
@@ -64,12 +65,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def default_tasks_dir() -> Path:
-    return Path(os.environ.get("DEEPSWE_TASKS_DIR", "tasks"))
-
-
 def list_tasks_command(args: argparse.Namespace) -> int:
-    for task in list_tasks(args.tasks_dir):
+    tasks_dir = args.tasks_dir or configured_tasks_dir()
+    tasks = list_tasks(tasks_dir) if tasks_dir and tasks_dir.exists() else list(TASK_SLUGS)
+    for task in tasks:
         print(task)
     return 0
 
@@ -78,7 +77,8 @@ def run_command(args: argparse.Namespace) -> int:
     symnav_sha = resolve_symnav_ref(args.symnav_ref)
     specs = [AgentSpec.parse(value) for value in args.agent]
     validate_auth(specs, os.environ)
-    tasks = list_tasks(args.tasks_dir) if args.tasks == "all" else split_csv(args.tasks)
+    tasks_dir = args.tasks_dir or configured_tasks_dir() or ensure_deepswe_tasks(args.deep_swe_ref)
+    tasks = list_tasks(tasks_dir) if args.tasks == "all" else split_csv(args.tasks)
     config = RunConfig(
         specs=specs,
         conditions=parse_conditions(args.conditions, symnav_sha),
@@ -89,7 +89,7 @@ def run_command(args: argparse.Namespace) -> int:
         timeout_multiplier=args.timeout_multiplier,
         max_limit_wait=timedelta(minutes=args.max_limit_wait_minutes),
         results_dir=args.results_dir,
-        tasks_dir=args.tasks_dir,
+        tasks_dir=tasks_dir,
     )
     runner = CellRunner.from_environment(
         config=config,

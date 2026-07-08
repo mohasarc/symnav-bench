@@ -8,7 +8,7 @@ symnav.
 ```bash
 python -m pip install -e '.[dev]'
 pytest
-symnav-bench list-tasks --tasks-dir /path/to/deep-swe/tasks
+symnav-bench list-tasks
 ```
 
 Run one cell:
@@ -18,7 +18,6 @@ symnav-bench run \
   --agent codex:gpt-5.4:xhigh \
   --conditions stock \
   --tasks ts-pattern-match-each \
-  --tasks-dir /opt/deep-swe/tasks \
   --results-dir results
 ```
 
@@ -50,7 +49,8 @@ trial output, not billing records.
 
 | Variable | Purpose |
 | --- | --- |
-| `DEEPSWE_TASKS_DIR` | Default task directory for `list-tasks` and `run`. |
+| `DEEPSWE_TASKS_DIR` | Existing task directory. When unset, `run` clones DeepSWE at runtime. |
+| `DEEPSWE_ROOT` | Runtime DeepSWE checkout path. Defaults to `/tmp/deep-swe` locally and `/work/deep-swe` in the image. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Preferred Claude auth for Claude Code arms. |
 | `ANTHROPIC_API_KEY` | Claude fallback auth. |
 | `CODEX_AUTH_JSON_B64` | Base64 encoded Codex auth JSON. |
@@ -58,11 +58,6 @@ trial output, not billing records.
 
 ## DeepSWE redistribution
 
-The Docker image clones DeepSWE into `/opt/deep-swe`.
-
-Redistribution permitted: no.
-
-As of 2026-07-09, the public `datacurve-ai/deep-swe` GitHub repo did not expose
-a `LICENSE` file at `main`. Do not publish a public GHCR image containing the
-tasks until upstream license or written permission explicitly permits
-redistribution.
+The Docker image keeps only the task slug catalog. It does not redistribute
+DeepSWE task contents. `run` downloads DeepSWE from the public upstream repo at
+execution time when `DEEPSWE_TASKS_DIR` is not supplied.
