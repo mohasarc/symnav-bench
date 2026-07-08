@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import yaml
 
 from symnav_bench.run.auth import validate_auth
 from symnav_bench.cli import run_exit_code
@@ -51,9 +52,23 @@ def test_limit_backoff_and_reset() -> None:
 
 
 def test_job_config_names_agent_arm(tmp_path) -> None:
-    yaml = build_job_yaml(AgentSpec("codex", "m", "e"), Condition("symnav", "c" * 40), "task", tmp_path)
-    assert "SymnavCodex" in yaml
-    assert "symnav_sha" in yaml
+    config = yaml.safe_load(
+        build_job_yaml(
+            AgentSpec("codex", "m", "e"),
+            Condition("symnav", "c" * 40),
+            "task",
+            tmp_path,
+        )
+    )
+    assert config["agents"] == [
+        {
+            "import_path": "symnav_bench.agents.codex",
+            "kwargs": {"effort": "e", "symnav_sha": "c" * 40},
+            "model_name": "m",
+            "name": "SymnavCodex",
+        }
+    ]
+    assert config["tasks"] == [{"path": str(tmp_path / "task")}]
 
 
 def test_runner_continues_after_error(tmp_path) -> None:
