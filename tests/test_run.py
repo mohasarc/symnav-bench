@@ -62,10 +62,9 @@ def test_job_config_names_agent_arm(tmp_path) -> None:
     )
     assert config["agents"] == [
         {
-            "import_path": "symnav_bench.agents.codex",
-            "kwargs": {"effort": "e", "symnav_sha": "c" * 40},
+            "import_path": "symnav_bench.agents.codex:SymnavCodex",
+            "kwargs": {"reasoning_effort": "e", "symnav_sha": "c" * 40},
             "model_name": "m",
-            "name": "SymnavCodex",
         }
     ]
     assert config["tasks"] == [{"path": str(tmp_path / "task")}]

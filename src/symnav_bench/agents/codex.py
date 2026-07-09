@@ -1,31 +1,56 @@
 from __future__ import annotations
 
+from pier.models.agent.install import InstallStep as PierInstallStep
+from pier.models.agent.network import NetworkAllowlist
+
 from symnav_bench.agents.directives import codex_agents_md
-from symnav_bench.agents.install import CODEX_AUTH_DOMAINS, INSTALL_DOMAINS, InstallStep, symnav_install_script, toolchain_root_step, write_text_step
+from symnav_bench.agents.install import (
+    CODEX_AUTH_DOMAINS,
+    INSTALL_DOMAINS,
+    InstallStep,
+    symnav_install_script,
+    toolchain_root_step,
+    write_text_step,
+)
 from symnav_bench.agents.pier_compat import Codex
 
 
 class StockCodex(Codex):
     def __init__(self, **kwargs):
-        steps = (
+        self._symnav_bench_steps = (
             toolchain_root_step(),
             write_text_step("/app/AGENTS.md", codex_agents_md(symnav=False)),
         )
-        super().__init__(
-            install_steps=tuple(kwargs.pop("install_steps", ())) + steps,
-            network_allowlist=tuple(kwargs.pop("network_allowlist", ())) + CODEX_AUTH_DOMAINS,
-            **kwargs,
-        )
+        super().__init__(**kwargs)
+
+    def install_spec(self):
+        spec = super().install_spec()
+        if spec is None:
+            return spec
+        spec.steps.extend(_pier_steps(self._symnav_bench_steps))
+        return spec
+
+    def network_allowlist(self) -> NetworkAllowlist:
+        domains = [*super().network_allowlist().domains, *CODEX_AUTH_DOMAINS]
+        return NetworkAllowlist(domains=domains)
 
 
 class SymnavCodex(StockCodex):
     def __init__(self, *, symnav_sha: str, **kwargs):
         steps = (
             write_text_step("/app/AGENTS.md", codex_agents_md(symnav=True)),
-            InstallStep("install symnav", symnav_install_script(symnav_sha, codex=True)),
+            InstallStep(
+                "install symnav",
+                symnav_install_script(symnav_sha, codex=True),
+            ),
         )
-        super().__init__(
-            install_steps=tuple(kwargs.pop("install_steps", ())) + steps,
-            network_allowlist=tuple(kwargs.pop("network_allowlist", ())) + INSTALL_DOMAINS,
-            **kwargs,
-        )
+        super().__init__(**kwargs)
+        self._symnav_bench_steps = (*self._symnav_bench_steps, *steps)
+
+    def network_allowlist(self) -> NetworkAllowlist:
+        domains = [*super().network_allowlist().domains, *INSTALL_DOMAINS]
+        return NetworkAllowlist(domains=domains)
+
+
+def _pier_steps(steps: tuple[InstallStep, ...]) -> list[PierInstallStep]:
+    return [PierInstallStep(user="root", run=step.command) for step in steps]

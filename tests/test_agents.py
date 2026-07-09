@@ -26,12 +26,15 @@ def test_claude_settings_hook() -> None:
     assert "/app/symnav-nudge.js" in settings
 
 
-def test_agent_allowlists_and_install_steps() -> None:
-    stock = StockCodex()
-    symnav = SymnavCodex(symnav_sha="b" * 40)
-    assert set(CODEX_AUTH_DOMAINS).issubset(set(stock.network_allowlist))
-    assert set(INSTALL_DOMAINS).issubset(set(symnav.network_allowlist))
-    assert any("install symnav" == step.name for step in symnav.install_steps)
+def test_agent_allowlists_and_install_steps(tmp_path) -> None:
+    stock = StockCodex(logs_dir=tmp_path / "stock")
+    symnav = SymnavCodex(logs_dir=tmp_path / "symnav", symnav_sha="b" * 40)
+    assert set(CODEX_AUTH_DOMAINS).issubset(set(stock.network_allowlist().domains))
+    assert set(INSTALL_DOMAINS).issubset(set(symnav.network_allowlist().domains))
+    assert any(
+        "git clone https://github.com/mohasarc/symnav.git" in step.run
+        for step in symnav.install_spec().steps
+    )
 
 
 def test_write_text_step_base64_encodes_multiword_text() -> None:

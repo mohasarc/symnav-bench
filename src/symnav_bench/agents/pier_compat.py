@@ -2,7 +2,8 @@ from __future__ import annotations
 
 
 try:
-    from datacurve_pier.agents import ClaudeCode, Codex
+    from pier.agents.installed.claude_code import ClaudeCode
+    from pier.agents.installed.codex import Codex
 except Exception:
 
     class _BaseAgent:

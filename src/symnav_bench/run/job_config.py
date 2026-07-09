@@ -19,22 +19,22 @@ def _agent_block(spec: AgentSpec, condition: Condition) -> dict[str, object]:
     if spec.agent == "claude" and condition.kind == "stock":
         return _agent_config(
             spec,
-            {"import_path": "datacurve_pier.agents", "name": "ClaudeCode"},
+            {"name": "claude-code"},
         )
     if spec.agent == "claude":
         return _agent_config(
             spec,
-            {"import_path": "symnav_bench.agents.claude", "name": "SymnavClaudeCode"},
+            {"import_path": "symnav_bench.agents.claude:SymnavClaudeCode"},
             symnav_sha=condition.symnav_sha,
         )
     if condition.kind == "stock":
         return _agent_config(
             spec,
-            {"import_path": "symnav_bench.agents.codex", "name": "StockCodex"},
+            {"import_path": "symnav_bench.agents.codex:StockCodex"},
         )
     return _agent_config(
         spec,
-        {"import_path": "symnav_bench.agents.codex", "name": "SymnavCodex"},
+        {"import_path": "symnav_bench.agents.codex:SymnavCodex"},
         symnav_sha=condition.symnav_sha,
     )
 
@@ -44,7 +44,7 @@ def _agent_config(
     base: dict[str, object],
     symnav_sha: str | None = None,
 ) -> dict[str, object]:
-    kwargs = {"effort": spec.effort}
+    kwargs = {"reasoning_effort": spec.effort}
     if symnav_sha is not None:
         kwargs["symnav_sha"] = symnav_sha
     return {**base, "model_name": spec.model, "kwargs": kwargs}
