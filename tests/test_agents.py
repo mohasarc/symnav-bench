@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from symnav_bench.agents.codex import StockCodex, SymnavCodex
 from symnav_bench.agents.directives import claude_settings_json, codex_agents_md
-from symnav_bench.agents.install import CODEX_AUTH_DOMAINS, INSTALL_DOMAINS, symnav_install_script, write_text_step
+from symnav_bench.agents.claude import SymnavClaudeCode
+from symnav_bench.agents.install import (
+    CODEX_AUTH_DOMAINS,
+    INSTALL_DOMAINS,
+    symnav_install_script,
+    toolchain_root_step,
+    write_text_step,
+)
 
 
 def test_symnav_install_script_pins_sha_and_builds() -> None:
@@ -16,6 +23,12 @@ def test_symnav_install_script_pins_sha_and_builds() -> None:
     assert "ln -sf /app/bin/symnav /usr/local/bin/symnav" in script
     assert "symnav --help >/dev/null" in script
     assert "/app/.git/info/exclude" in script
+
+
+def test_toolchain_root_creates_claude_compat_links() -> None:
+    step = toolchain_root_step()
+    assert "ln -sfn ../.agents/skills /app/.claude/skills" in step.command
+    assert "ln -sfn AGENTS.md /app/CLAUDE.md" in step.command
 
 
 def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
@@ -35,8 +48,12 @@ def test_claude_settings_hook() -> None:
 def test_agent_allowlists_and_install_steps(tmp_path) -> None:
     stock = StockCodex(logs_dir=tmp_path / "stock")
     symnav = SymnavCodex(logs_dir=tmp_path / "symnav", symnav_sha="b" * 40)
+    claude = SymnavClaudeCode(logs_dir=tmp_path / "claude", symnav_sha="b" * 40)
     assert set(CODEX_AUTH_DOMAINS).issubset(set(stock.network_allowlist().domains))
     assert set(INSTALL_DOMAINS).issubset(set(symnav.network_allowlist().domains))
+    assert any(step.run.startswith("mkdir -p /app/.git/info") for step in claude.install_spec().steps)
+    assert any("/app/AGENTS.md" in step.run for step in claude.install_spec().steps)
+    assert not any("/app/CLAUDE.md" in step.run and "ln -sfn" not in step.run for step in claude.install_spec().steps)
     assert any(
         "git clone https://github.com/mohasarc/symnav.git" in step.run
         for step in symnav.install_spec().steps

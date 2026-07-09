@@ -25,7 +25,13 @@ class InstallStep:
 def toolchain_root_step() -> InstallStep:
     return InstallStep(
         name="install toolchain roots",
-        command="mkdir -p /app/.git/info /app/bin /app/.agents/skills",
+        command=" && ".join(
+            [
+                "mkdir -p /app/.git/info /app/bin /app/.agents/skills /app/.claude",
+                "ln -sfn ../.agents/skills /app/.claude/skills",
+                "ln -sfn AGENTS.md /app/CLAUDE.md",
+            ]
+        ),
     )
 
 
