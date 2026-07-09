@@ -63,6 +63,26 @@ def test_extracts_exit_code_from_matching_observation() -> None:
     assert commands[1].succeeded is False
 
 
+def test_extracts_claude_exit_code_format() -> None:
+    commands = extract_commands(
+        {
+            "steps": [
+                {
+                    "tool_calls": [
+                        {
+                            "function_name": "Bash",
+                            "arguments": {"command": "symnav resolve Foo"},
+                        }
+                    ],
+                    "observation": "Exit code 127\nOutput:\nnot found\n",
+                }
+            ]
+        }
+    )
+    assert commands[0].exit_code == 127
+    assert commands[0].succeeded is False
+
+
 def test_write_stdin_inherits_running_command() -> None:
     commands = extract_commands(
         {

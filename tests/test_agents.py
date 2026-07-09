@@ -20,7 +20,9 @@ def test_symnav_install_script_pins_sha_and_builds() -> None:
     assert "pnpm install --frozen-lockfile" in script
     assert "pnpm build" in script
     assert "cp -R /opt/symnav/.agents/skills/symnav /app/.agents/skills/symnav" in script
-    assert "exec pnpm --dir /opt/symnav --filter symnav dev \"$@\"" in script
+    assert "exec pnpm --dir /opt/symnav --filter symnav dev --cwd /app \"$@\"" in script
+    assert "has_cwd=0" in script
+    assert "--cwd|--cwd=*) has_cwd=1 ;;" in script
     assert "exec pnpm --dir /opt/symnav --filter symnav dev -- \"$@\"" not in script
     assert "ln -sf /app/bin/symnav /usr/local/bin/symnav" in script
     assert "symnav --help >/dev/null" in script
@@ -39,7 +41,9 @@ def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
     assert "symnav" not in codex_agents_md(symnav=False).lower()
     assert "yield_time_ms" in codex_agents_md(symnav=True)
     assert "overview --depth 0" in codex_agents_md(symnav=True)
-    assert "`symnav --cwd /app" in codex_agents_md(symnav=True)
+    assert "installed globally" in codex_agents_md(symnav=True)
+    assert "`symnav ...`" in codex_agents_md(symnav=True)
+    assert "`symnav --cwd /app" not in codex_agents_md(symnav=True)
     assert "read/search/test/edit normally" in codex_agents_md(symnav=True)
     assert "never on a directory" in codex_agents_md(symnav=True)
     assert "Use refs" in codex_agents_md(symnav=True)

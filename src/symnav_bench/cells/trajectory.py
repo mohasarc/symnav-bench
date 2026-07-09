@@ -151,7 +151,7 @@ def _timed_out(text: str) -> bool:
 
 
 def _exit_code(text: str) -> int | None:
-    match = re.search(r"Process exited with code (-?\d+)", text)
+    match = re.search(r"(?:Process exited with code|Exit code) (-?\d+)", text)
     return int(match.group(1)) if match else None
 
 
