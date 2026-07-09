@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -46,6 +47,7 @@ def normalize_trial(
     write_commands_jsonl(commands, cell_dir / "commands.jsonl")
     if trial_dir:
         _copy_raw_trial_files(trial_dir, cell_dir / "raw")
+        _write_workspace_artifacts(trial_dir, cell_dir / "raw" / "workspace")
     if not result and status != "error":
         status = "error"
         error = error or "missing or empty trial result"
@@ -99,6 +101,51 @@ def _raw_files_under(directory: Path) -> list[Path]:
         return [path for path in directory.rglob("*") if path.is_file()]
     except OSError:
         return []
+
+
+def _write_workspace_artifacts(trial_dir: Path, workspace_dir: Path) -> None:
+    for workspace in _git_workspaces_under(trial_dir):
+        relative = workspace.relative_to(trial_dir)
+        target = workspace_dir / ("root" if str(relative) == "." else _safe_relative_name(relative))
+        target.mkdir(parents=True, exist_ok=True)
+        _write_git_command(workspace, ["git", "status", "--short"], target / "status-short.txt")
+        _write_git_command(workspace, ["git", "diff", "--stat"], target / "diff-stat.txt")
+        _write_git_command(workspace, ["git", "diff"], target / "diff.patch")
+        _write_git_command(workspace, ["git", "diff", "--cached"], target / "diff-cached.patch")
+
+
+def _git_workspaces_under(trial_dir: Path) -> list[Path]:
+    try:
+        git_paths = [
+            path
+            for path in trial_dir.rglob(".git")
+            if _is_workspace_git_marker(path) and not _is_raw_support_path(trial_dir, path)
+        ]
+    except OSError:
+        return []
+    return sorted({path.parent for path in git_paths})
+
+
+def _is_workspace_git_marker(path: Path) -> bool:
+    return path.is_dir() or path.is_file()
+
+
+def _is_raw_support_path(trial_dir: Path, path: Path) -> bool:
+    return any(part in {"agent", "verifier", "steps"} for part in path.relative_to(trial_dir).parts)
+
+
+def _safe_relative_name(relative: Path) -> str:
+    return "__".join(part for part in relative.parts if part not in {"", "."})
+
+
+def _write_git_command(workspace: Path, command: list[str], target: Path) -> None:
+    result = subprocess.run(command, cwd=workspace, text=True, capture_output=True, check=False)
+    content = result.stdout
+    if result.stderr:
+        content += ("\n" if content else "") + result.stderr
+    if result.returncode != 0:
+        content += f"\n[exit_code={result.returncode}]\n"
+    target.write_text(content, encoding="utf-8")
 
 
 def _read_json(path: Path) -> dict[str, Any]:

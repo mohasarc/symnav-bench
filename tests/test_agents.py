@@ -23,6 +23,8 @@ def test_symnav_install_script_pins_sha_and_builds() -> None:
     assert "ln -sf /app/bin/symnav /usr/local/bin/symnav" in script
     assert "symnav --help >/dev/null" in script
     assert "/app/.git/info/exclude" in script
+    assert "bin/symnav .agents/ .claude/ AGENTS.md CLAUDE.md" in script
+    assert "/app/bin/symnav /opt/symnav /app/.agents" not in script
 
 
 def test_toolchain_root_creates_claude_compat_links() -> None:

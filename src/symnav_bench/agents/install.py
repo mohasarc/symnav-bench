@@ -62,7 +62,7 @@ def symnav_install_script(symnav_sha: str, *, codex: bool) -> str:
         "chmod +x /app/bin/symnav",
         "ln -sf /app/bin/symnav /usr/local/bin/symnav",
         "symnav --help >/dev/null",
-        "printf '%s\\n' /app/bin/symnav /opt/symnav /app/.agents >> /app/.git/info/exclude",
+        "printf '%s\\n' bin/symnav .agents/ .claude/ AGENTS.md CLAUDE.md >> /app/.git/info/exclude",
         "git config --global user.name symnav-bench",
         "git config --global user.email symnav-bench@example.invalid",
     ]

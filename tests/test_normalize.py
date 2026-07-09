@@ -58,6 +58,36 @@ def test_normalize_trial_writes_cell_and_commands(tmp_path) -> None:
     assert not (raw_dir / "agent" / "sessions").exists()
 
 
+def test_normalize_trial_writes_workspace_git_artifacts(tmp_path) -> None:
+    trial = tmp_path / "trial"
+    workspace = trial / "workspace"
+    (trial / "agent").mkdir(parents=True)
+    workspace.mkdir(parents=True)
+    (workspace / ".git").mkdir()
+    (workspace / "changed.ts").write_text("new", encoding="utf-8")
+    (trial / "result.json").write_text(
+        json.dumps({"verifier_result": {"rewards": {"f2p": 0.0}}}),
+        encoding="utf-8",
+    )
+    (trial / "agent" / "trajectory.json").write_text('{"steps":[]}', encoding="utf-8")
+    identity = CellIdentity(AgentSpec("codex", "m", "e"), "stock", "task", 0)
+
+    normalize_trial(
+        trial,
+        identity,
+        HarnessMeta("image", "pier", "deep", None),
+        "completed",
+        None,
+        tmp_path / "out",
+    )
+
+    workspace_artifacts = tmp_path / "out" / identity.dirname() / "raw" / "workspace" / "workspace"
+    assert (workspace_artifacts / "status-short.txt").is_file()
+    assert (workspace_artifacts / "diff.patch").is_file()
+    assert (workspace_artifacts / "diff-cached.patch").is_file()
+    assert (workspace_artifacts / "diff-stat.txt").is_file()
+
+
 def test_missing_trial_becomes_error(tmp_path) -> None:
     identity = CellIdentity(AgentSpec("codex", "m", "e"), "stock", "task", 0)
     cell = normalize_trial(None, identity, HarnessMeta("image", "pier", "deep", None), "completed", None, tmp_path)
