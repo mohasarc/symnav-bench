@@ -24,7 +24,7 @@ class SymnavClaudeCode(ClaudeCode):
             append_text_step("/app/AGENTS.md", claude_directive()),
             append_text_step("/app/CLAUDE.md", claude_directive(), unless_same_file_as="/app/AGENTS.md"),
             write_text_step("/app/.claude/settings.json", claude_settings_json()),
-            write_text_step("/app/symnav-nudge.js", NUDGE_JS),
+            write_text_step("/tmp/symnav-bench/symnav-nudge.js", NUDGE_JS),
             InstallStep(
                 "install symnav",
                 symnav_install_script(symnav_sha, codex=False),

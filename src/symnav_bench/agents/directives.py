@@ -16,7 +16,7 @@ if (/\\b(rg|grep|find|cat|sed|head|awk)\\b/.test(text) && !/\\bsymnav\\b/.test(t
 def claude_directive() -> str:
     return "\n".join(
         [
-            "Before TypeScript code exploration, read .agents/skills/symnav/SKILL.md.",
+            "Always read .agents/skills/symnav/SKILL.md before starting any work. No exceptions; read the symnav skill first.",
             "The symnav command is installed globally. Run it exactly as `symnav ...` from any shell.",
             "Use the global `symnav ...` command for deterministic TypeScript orientation and symbol navigation.",
             "Start TypeScript exploration with `symnav resolve <name>` or `symnav overview <file> --depth 0`.",
@@ -38,7 +38,7 @@ def codex_agents_md(symnav: bool) -> str:
         lines.extend(
             [
                 "",
-                "Read .agents/skills/symnav/SKILL.md before TypeScript code exploration.",
+                "Always read .agents/skills/symnav/SKILL.md before starting any work. No exceptions; read the symnav skill first.",
                 "The symnav command is installed globally. Run it exactly as `symnav ...` from any shell.",
                 "Use the global `symnav ...` command for deterministic TypeScript orientation and symbol navigation.",
                 "Start TypeScript exploration with `symnav resolve <name>` or `symnav overview <file> --depth 0`.",
@@ -58,7 +58,7 @@ def claude_settings_json() -> str:
                 "PreToolUse": [
                     {
                         "matcher": "Grep|Glob|Read|Bash",
-                        "hooks": [{"type": "command", "command": "node /app/symnav-nudge.js"}],
+                        "hooks": [{"type": "command", "command": "node /tmp/symnav-bench/symnav-nudge.js"}],
                     }
                 ]
             }

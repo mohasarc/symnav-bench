@@ -40,6 +40,7 @@ def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
     assert "yield_time_ms" in codex_agents_md(symnav=False)
     assert "symnav" not in codex_agents_md(symnav=False).lower()
     assert "yield_time_ms" in codex_agents_md(symnav=True)
+    assert "No exceptions; read the symnav skill first" in codex_agents_md(symnav=True)
     assert "overview --depth 0" in codex_agents_md(symnav=True)
     assert "installed globally" in codex_agents_md(symnav=True)
     assert "`symnav ...`" in codex_agents_md(symnav=True)
@@ -52,7 +53,7 @@ def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
 def test_claude_settings_hook() -> None:
     settings = claude_settings_json()
     assert "Grep|Glob|Read|Bash" in settings
-    assert "/app/symnav-nudge.js" in settings
+    assert "/tmp/symnav-bench/symnav-nudge.js" in settings
 
 
 def test_agent_allowlists_and_install_steps(tmp_path) -> None:
@@ -64,6 +65,8 @@ def test_agent_allowlists_and_install_steps(tmp_path) -> None:
     assert any("mkdir -p /app/.git/info" in step.run for step in claude.install_spec().steps)
     assert any("/app/AGENTS.md" in step.run for step in claude.install_spec().steps)
     assert any("/app/CLAUDE.md" in step.run and "-ef" in step.run for step in claude.install_spec().steps)
+    assert any("/tmp/symnav-bench/symnav-nudge.js" in step.run for step in claude.install_spec().steps)
+    assert not any("/app/symnav-nudge.js" in step.run for step in claude.install_spec().steps)
     assert any("symnav-bench-capture-workspace" in step.run for step in stock.install_spec().steps)
     assert any(str(tmp_path / "symnav") in step.run and "workspace/app" in step.run for step in symnav.install_spec().steps)
     assert any(
@@ -94,3 +97,9 @@ def test_workspace_capture_step_wraps_agent_binary(tmp_path) -> None:
     assert "git -C /app diff >" in step.command
     assert 'real_copy="$wrapper.symnav-bench-real"' in step.command
     assert 'SYMNAV_BENCH_WORKSPACE_CAPTURE_DIR="$capture_dir" "$real"' in step.command
+
+
+def test_workspace_capture_defaults_to_persisted_agent_logs() -> None:
+    step = workspace_capture_step(None, ("claude",))
+    assert "logs_dir=/logs/agent" in step.command
+    assert "workspace/app" in step.command

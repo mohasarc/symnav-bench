@@ -84,7 +84,7 @@ def append_text_step(path: str, text: str, *, unless_same_file_as: str | None = 
 
 
 def workspace_capture_step(logs_dir: object, binaries: tuple[str, ...]) -> InstallStep:
-    target = shlex.quote(str(logs_dir or "/tmp/symnav-bench-agent"))
+    target = shlex.quote(str(logs_dir or "/logs/agent"))
     wrapper_lines = [
         "set -eu",
         f"logs_dir={target}",
