@@ -11,15 +11,18 @@ from symnav_bench.agents.install import (
     append_text_step,
     symnav_install_script,
     toolchain_root_step,
+    workspace_capture_step,
 )
 from symnav_bench.agents.pier_compat import Codex
 
 
 class StockCodex(Codex):
     def __init__(self, **kwargs):
+        logs_dir = kwargs.get("logs_dir")
         self._symnav_bench_steps = (
             toolchain_root_step(),
             append_text_step("/app/AGENTS.md", codex_agents_md(symnav=False)),
+            workspace_capture_step(logs_dir, ("codex",)),
         )
         super().__init__(**kwargs)
 
@@ -37,6 +40,7 @@ class StockCodex(Codex):
 
 class SymnavCodex(StockCodex):
     def __init__(self, *, symnav_sha: str, **kwargs):
+        logs_dir = kwargs.get("logs_dir")
         self._symnav_bench_steps = (
             toolchain_root_step(),
             append_text_step("/app/AGENTS.md", codex_agents_md(symnav=True)),
@@ -44,6 +48,7 @@ class SymnavCodex(StockCodex):
                 "install symnav",
                 symnav_install_script(symnav_sha, codex=True),
             ),
+            workspace_capture_step(logs_dir, ("codex",)),
         )
         Codex.__init__(self, **kwargs)
 

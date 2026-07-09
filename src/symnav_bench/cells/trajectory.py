@@ -36,6 +36,7 @@ def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
     if not isinstance(steps, list):
         return []
     commands: list[ExecutedCommand] = []
+    commands_by_session: dict[str, str] = {}
     for step_index, step in enumerate(steps):
         if not isinstance(step, dict):
             continue
@@ -46,6 +47,11 @@ def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
                 args = {}
             command = _primary_command(tool, args)
             observation = _observation_text(step, tool_call)
+            if not command and tool == "write_stdin":
+                command = commands_by_session.get(str(args.get("session_id") or ""), "")
+            session_id = _running_session_id(observation)
+            if command and session_id:
+                commands_by_session[session_id] = command
             exit_code = _exit_code(observation)
             commands.append(
                 ExecutedCommand(
@@ -147,6 +153,11 @@ def _timed_out(text: str) -> bool:
 def _exit_code(text: str) -> int | None:
     match = re.search(r"Process exited with code (-?\d+)", text)
     return int(match.group(1)) if match else None
+
+
+def _running_session_id(text: str) -> str | None:
+    match = re.search(r"Process running with session ID (\d+)", text)
+    return match.group(1) if match else None
 
 
 def _symnav_subcommand(command: str) -> str | None:

@@ -47,6 +47,7 @@ def normalize_trial(
     write_commands_jsonl(commands, cell_dir / "commands.jsonl")
     if trial_dir:
         _copy_raw_trial_files(trial_dir, cell_dir / "raw")
+        _copy_captured_workspace_artifacts(trial_dir, cell_dir / "raw" / "workspace")
         _write_workspace_artifacts(trial_dir, cell_dir / "raw" / "workspace")
     if not result and status != "error":
         status = "error"
@@ -101,6 +102,17 @@ def _raw_files_under(directory: Path) -> list[Path]:
         return [path for path in directory.rglob("*") if path.is_file()]
     except OSError:
         return []
+
+
+def _copy_captured_workspace_artifacts(trial_dir: Path, workspace_dir: Path) -> None:
+    source = trial_dir / "agent" / "workspace"
+    if not source.exists():
+        return
+    for path in _raw_files_under(source):
+        relative = path.relative_to(source)
+        target = workspace_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
 
 
 def _write_workspace_artifacts(trial_dir: Path, workspace_dir: Path) -> None:
@@ -215,4 +227,18 @@ def _command_counts(commands: list[ExecutedCommand]) -> dict[str, Any]:
                     symnav_failures[subcommand] = symnav_failures.get(subcommand, 0) + 1
             elif tag in counts:
                 counts[tag] += 1
-    return {"symnav": symnav, "symnav_failures": symnav_failures, **counts}
+    return {
+        "symnav": symnav,
+        "symnav_failures": symnav_failures,
+        "symnav_skill_reads": _symnav_skill_reads(commands),
+        **counts,
+    }
+
+
+def _symnav_skill_reads(commands: list[ExecutedCommand]) -> int:
+    return sum(
+        1
+        for command in commands
+        if ".agents/skills/symnav/SKILL.md" in command.command
+        or "/app/.agents/skills/symnav/SKILL.md" in command.command
+    )

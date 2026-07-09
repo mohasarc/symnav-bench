@@ -63,6 +63,54 @@ def test_extracts_exit_code_from_matching_observation() -> None:
     assert commands[1].succeeded is False
 
 
+def test_write_stdin_inherits_running_command() -> None:
+    commands = extract_commands(
+        {
+            "steps": [
+                {
+                    "step_id": 1,
+                    "tool_calls": [
+                        {
+                            "tool_call_id": "start",
+                            "function_name": "exec_command",
+                            "arguments": {"cmd": "symnav resolve Foo"},
+                        }
+                    ],
+                    "observation": {
+                        "results": [
+                            {
+                                "source_call_id": "start",
+                                "content": "Process running with session ID 123\nOutput:\n",
+                            }
+                        ]
+                    },
+                },
+                {
+                    "step_id": 2,
+                    "tool_calls": [
+                        {
+                            "tool_call_id": "poll",
+                            "function_name": "write_stdin",
+                            "arguments": {"session_id": 123},
+                        }
+                    ],
+                    "observation": {
+                        "results": [
+                            {
+                                "source_call_id": "poll",
+                                "content": "Process exited with code 0\nOutput:\nFoo\n",
+                            }
+                        ]
+                    },
+                },
+            ]
+        }
+    )
+    assert commands[1].command == "symnav resolve Foo"
+    assert commands[1].tags == ("symnav:resolve",)
+    assert commands[1].exit_code == 0
+
+
 def test_claude_tools_extract_and_classify() -> None:
     commands = extract_commands(
         {

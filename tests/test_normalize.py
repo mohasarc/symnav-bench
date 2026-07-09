@@ -30,7 +30,21 @@ def test_normalize_trial_writes_cell_and_commands(tmp_path) -> None:
         encoding="utf-8",
     )
     (trial / "agent" / "trajectory.json").write_text(
-        json.dumps({"steps": [{"tool_calls": [{"function_name": "exec_command", "arguments": {"cmd": "rg Foo"}}]}]}),
+        json.dumps(
+            {
+                "steps": [
+                    {"tool_calls": [{"function_name": "exec_command", "arguments": {"cmd": "rg Foo"}}]},
+                    {
+                        "tool_calls": [
+                            {
+                                "function_name": "exec_command",
+                                "arguments": {"cmd": "sed -n '1,80p' /app/.agents/skills/symnav/SKILL.md"},
+                            }
+                        ]
+                    },
+                ]
+            }
+        ),
         encoding="utf-8",
     )
     (trial / "agent" / "codex.txt").write_text("agent stderr", encoding="utf-8")
@@ -49,6 +63,7 @@ def test_normalize_trial_writes_cell_and_commands(tmp_path) -> None:
     assert cell.solved is True
     assert cell.usage["cost_usd_imputed"] == 0.4
     assert cell.command_counts["search"] == 1
+    assert cell.command_counts["symnav_skill_reads"] == 1
     loaded = Cell.load(tmp_path / "out" / identity.dirname() / "cell.json")
     assert loaded.identity == identity
     raw_dir = tmp_path / "out" / identity.dirname() / "raw"
@@ -86,6 +101,31 @@ def test_normalize_trial_writes_workspace_git_artifacts(tmp_path) -> None:
     assert (workspace_artifacts / "diff.patch").is_file()
     assert (workspace_artifacts / "diff-cached.patch").is_file()
     assert (workspace_artifacts / "diff-stat.txt").is_file()
+
+
+def test_normalize_trial_copies_captured_workspace_artifacts(tmp_path) -> None:
+    trial = tmp_path / "trial"
+    captured = trial / "agent" / "workspace" / "app"
+    captured.mkdir(parents=True)
+    (captured / "status-short.txt").write_text(" M src/a.ts\n", encoding="utf-8")
+    (trial / "result.json").write_text(
+        json.dumps({"verifier_result": {"rewards": {"f2p": 0.0}}}),
+        encoding="utf-8",
+    )
+    (trial / "agent" / "trajectory.json").write_text('{"steps":[]}', encoding="utf-8")
+    identity = CellIdentity(AgentSpec("codex", "m", "e"), "stock", "task", 0)
+
+    normalize_trial(
+        trial,
+        identity,
+        HarnessMeta("image", "pier", "deep", None),
+        "completed",
+        None,
+        tmp_path / "out",
+    )
+
+    workspace_artifacts = tmp_path / "out" / identity.dirname() / "raw" / "workspace" / "app"
+    assert (workspace_artifacts / "status-short.txt").read_text(encoding="utf-8") == " M src/a.ts\n"
 
 
 def test_missing_trial_becomes_error(tmp_path) -> None:

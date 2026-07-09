@@ -9,6 +9,7 @@ from symnav_bench.agents.install import (
     append_text_step,
     symnav_install_script,
     toolchain_root_step,
+    workspace_capture_step,
     write_text_step,
 )
 
@@ -40,6 +41,8 @@ def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
     assert "overview --depth 0" in codex_agents_md(symnav=True)
     assert "`symnav --cwd /app" in codex_agents_md(symnav=True)
     assert "read/search/test/edit normally" in codex_agents_md(symnav=True)
+    assert "never on a directory" in codex_agents_md(symnav=True)
+    assert "Use refs" in codex_agents_md(symnav=True)
 
 
 def test_claude_settings_hook() -> None:
@@ -57,6 +60,8 @@ def test_agent_allowlists_and_install_steps(tmp_path) -> None:
     assert any("mkdir -p /app/.git/info" in step.run for step in claude.install_spec().steps)
     assert any("/app/AGENTS.md" in step.run for step in claude.install_spec().steps)
     assert any("/app/CLAUDE.md" in step.run and "-ef" in step.run for step in claude.install_spec().steps)
+    assert any("symnav-bench-capture-workspace" in step.run for step in stock.install_spec().steps)
+    assert any(str(tmp_path / "symnav") in step.run and "workspace/app" in step.run for step in symnav.install_spec().steps)
     assert any(
         "git clone https://github.com/mohasarc/symnav.git" in step.run
         for step in symnav.install_spec().steps
@@ -75,3 +80,13 @@ def test_append_text_step_preserves_tracked_instruction_files() -> None:
     assert "symnav-bench injected instructions" in step.command
     assert "update-index --skip-worktree" in step.command
     assert ">> \"$path\"" in step.command
+
+
+def test_workspace_capture_step_wraps_agent_binary(tmp_path) -> None:
+    step = workspace_capture_step(tmp_path / "agent", ("codex",))
+    assert "symnav-bench-capture-workspace" in step.command
+    assert str(tmp_path / "agent") in step.command
+    assert "workspace/app" in step.command
+    assert "git -C /app diff >" in step.command
+    assert 'real_copy="$wrapper.symnav-bench-real"' in step.command
+    assert 'SYMNAV_BENCH_WORKSPACE_CAPTURE_DIR="$capture_dir" "$real"' in step.command

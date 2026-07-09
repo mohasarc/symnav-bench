@@ -83,6 +83,71 @@ def append_text_step(path: str, text: str, *, unless_same_file_as: str | None = 
     )
 
 
+def workspace_capture_step(logs_dir: object, binaries: tuple[str, ...]) -> InstallStep:
+    target = shlex.quote(str(logs_dir or "/tmp/symnav-bench-agent"))
+    wrapper_lines = [
+        "set -eu",
+        f"logs_dir={target}",
+        'capture_dir="$logs_dir/workspace/app"',
+        "mkdir -p /usr/local/bin",
+        "cat > /usr/local/bin/symnav-bench-capture-workspace <<'EOF'",
+        "#!/bin/sh",
+        "set +e",
+        'target="${SYMNAV_BENCH_WORKSPACE_CAPTURE_DIR:-}"',
+        '[ -n "$target" ] || exit 0',
+        'mkdir -p "$target"',
+        'if [ ! -e /app/.git ]; then',
+        '  printf "%s\\n" "missing /app/.git" > "$target/error.txt"',
+        "  exit 0",
+        "fi",
+        'git -C /app status --short > "$target/status-short.txt" 2>&1',
+        'git -C /app status --short --untracked-files=all > "$target/status-short-untracked.txt" 2>&1',
+        'git -C /app diff --stat > "$target/diff-stat.txt" 2>&1',
+        'git -C /app diff > "$target/diff.patch" 2>&1',
+        'git -C /app diff --cached > "$target/diff-cached.patch" 2>&1',
+        'git -C /app ls-files --others --exclude-standard > "$target/untracked-files.txt" 2>&1',
+        'rm -rf "$target/untracked"',
+        'mkdir -p "$target/untracked"',
+        'git -C /app ls-files --others --exclude-standard | while IFS= read -r file; do',
+        '  case "$file" in',
+        '    .agents/*|.claude/*|AGENTS.md|CLAUDE.md|bin/symnav) continue ;;',
+        "  esac",
+        '  mkdir -p "$target/untracked/$(dirname "$file")"',
+        '  cp "/app/$file" "$target/untracked/$file" 2>/dev/null || true',
+        "done",
+        "EOF",
+        "chmod +x /usr/local/bin/symnav-bench-capture-workspace",
+    ]
+    for binary in binaries:
+        wrapper_lines.extend(_wrap_binary_lines(binary))
+    return InstallStep(name="capture workspace artifacts", command="\n".join(wrapper_lines))
+
+
+def _wrap_binary_lines(binary: str) -> list[str]:
+    quoted_binary = shlex.quote(binary)
+    return [
+        f"binary={quoted_binary}",
+        'real="$(command -v "$binary" || true)"',
+        'if [ -n "$real" ] && ! printf "%s" "$real" | grep -q "/symnav-bench-real$"; then',
+        'wrapper="/usr/local/bin/$binary"',
+        'real_copy="$wrapper.symnav-bench-real"',
+        'if [ "$real" = "$wrapper" ]; then',
+        '  if [ ! -e "$real_copy" ]; then mv "$wrapper" "$real_copy"; fi',
+        '  real="$real_copy"',
+        "fi",
+        'cat > "$wrapper" <<EOF',
+        "#!/bin/sh",
+        "set +e",
+        'SYMNAV_BENCH_WORKSPACE_CAPTURE_DIR="$capture_dir" "$real" "\\$@"',
+        "status=\\$?",
+        "SYMNAV_BENCH_WORKSPACE_CAPTURE_DIR=\"$capture_dir\" /usr/local/bin/symnav-bench-capture-workspace >/dev/null 2>&1 || true",
+        "exit \\$status",
+        "EOF",
+        'chmod +x "$wrapper"',
+        "fi",
+    ]
+
+
 def symnav_install_script(symnav_sha: str, *, codex: bool) -> str:
     escaped_sha = symnav_sha.replace("'", "")
     lines = [

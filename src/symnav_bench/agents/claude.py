@@ -10,6 +10,7 @@ from symnav_bench.agents.install import (
     append_text_step,
     symnav_install_script,
     toolchain_root_step,
+    workspace_capture_step,
     write_text_step,
 )
 from symnav_bench.agents.pier_compat import ClaudeCode
@@ -17,6 +18,7 @@ from symnav_bench.agents.pier_compat import ClaudeCode
 
 class SymnavClaudeCode(ClaudeCode):
     def __init__(self, *, symnav_sha: str, **kwargs):
+        logs_dir = kwargs.get("logs_dir")
         self._symnav_bench_steps = (
             toolchain_root_step(),
             append_text_step("/app/AGENTS.md", claude_directive()),
@@ -27,6 +29,7 @@ class SymnavClaudeCode(ClaudeCode):
                 "install symnav",
                 symnav_install_script(symnav_sha, codex=False),
             ),
+            workspace_capture_step(logs_dir, ("claude", "claude-code")),
         )
         super().__init__(**kwargs)
 
