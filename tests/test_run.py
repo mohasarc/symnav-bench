@@ -12,7 +12,7 @@ from symnav_bench.cells.cell import Cell
 from symnav_bench.run.config import RunConfig
 from symnav_bench.run.job_config import build_job_yaml
 from symnav_bench.run.limits import next_backoff, parse_limit_reset
-from symnav_bench.run.runner import CellRunner, build_pier_run_command
+from symnav_bench.run.runner import CellRunner, build_pier_run_command, find_trial_dir
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, Condition
 
@@ -98,6 +98,42 @@ def test_runner_continues_after_error(tmp_path) -> None:
     assert [cell.status for cell in cells] == ["error", "completed"]
 
 
+def test_runner_normalizes_pier_trial_result_after_agent_failure(tmp_path) -> None:
+    config = RunConfig(
+        specs=[AgentSpec("codex", "m", "e")],
+        conditions=[Condition("stock")],
+        tasks=["t1"],
+        reps=1,
+        rep_start=0,
+        parallel=1,
+        timeout_multiplier=None,
+        max_limit_wait=timedelta(minutes=1),
+        results_dir=tmp_path / "results",
+        tasks_dir=tmp_path,
+    )
+
+    def pier(job_yaml, jobs_dir):
+        trial_dir = jobs_dir / "job" / "trial"
+        trial_dir.mkdir(parents=True)
+        (trial_dir / "agent").mkdir()
+        (trial_dir / "verifier").mkdir()
+        (trial_dir / "result.json").write_text(
+            '{"verifier_result":{"rewards":{"f2p":0.0}}}',
+            encoding="utf-8",
+        )
+        raise RuntimeError("agent failed")
+
+    runner = CellRunner(
+        config,
+        harness=_harness(),
+        pier=pier,
+        sleeper=lambda seconds: None,
+    )
+    cells = runner.run_all()
+    assert [cell.status for cell in cells] == ["completed"]
+    assert cells[0].rewards == {"f2p": 0.0}
+
+
 def test_pier_run_command_uses_current_cli_output_flag(tmp_path) -> None:
     command = build_pier_run_command(tmp_path / "job.yaml", tmp_path / "jobs")
     assert command == [
@@ -109,6 +145,16 @@ def test_pier_run_command_uses_current_cli_output_flag(tmp_path) -> None:
         str(tmp_path / "jobs"),
         "--yes",
     ]
+
+
+def test_find_trial_dir_ignores_job_result(tmp_path) -> None:
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    (job_dir / "result.json").write_text("{}", encoding="utf-8")
+    trial_dir = job_dir / "trial"
+    (trial_dir / "agent").mkdir(parents=True)
+    (trial_dir / "result.json").write_text("{}", encoding="utf-8")
+    assert find_trial_dir(tmp_path) == trial_dir
 
 
 def test_run_exit_code_fails_when_a_cell_errors() -> None:

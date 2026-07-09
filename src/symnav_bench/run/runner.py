@@ -73,6 +73,16 @@ class CellRunner:
             try:
                 self.pier(job_yaml, jobs_dir)
             except Exception as error:
+                trial_dir = find_trial_dir(jobs_dir)
+                if trial_dir is not None:
+                    return normalize_trial(
+                        trial_dir,
+                        identity,
+                        self.harness,
+                        "completed",
+                        None,
+                        self.config.results_dir,
+                    )
                 marker = find_limit_marker(jobs_dir)
                 if marker:
                     wait = self._limit_wait(marker, waits)
@@ -84,7 +94,14 @@ class CellRunner:
                     shutil.rmtree(jobs_dir, ignore_errors=True)
                     continue
                 return normalize_trial(jobs_dir, identity, self.harness, "error", str(error), self.config.results_dir)
-            return normalize_trial(jobs_dir, identity, self.harness, "completed", None, self.config.results_dir)
+            return normalize_trial(
+                find_trial_dir(jobs_dir) or jobs_dir,
+                identity,
+                self.harness,
+                "completed",
+                None,
+                self.config.results_dir,
+            )
 
     def _limit_wait(self, marker: str, waits: list[timedelta]) -> timedelta:
         reset = parse_limit_reset(marker, self.clock())
@@ -99,6 +116,19 @@ def subprocess_pier_run(job_yaml: Path, jobs_dir: Path) -> None:
 
 def build_pier_run_command(job_yaml: Path, jobs_dir: Path) -> list[str]:
     return ["pier", "run", "--config", str(job_yaml), "--jobs-dir", str(jobs_dir), "--yes"]
+
+
+def find_trial_dir(jobs_dir: Path) -> Path | None:
+    result_paths = [
+        path
+        for path in jobs_dir.rglob("result.json")
+        if (path.parent / "agent").exists()
+        or (path.parent / "verifier").exists()
+        or (path.parent / "steps").exists()
+    ]
+    if not result_paths:
+        return None
+    return max(result_paths, key=lambda path: path.stat().st_mtime).parent
 
 
 def _pier_version() -> str:
