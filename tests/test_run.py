@@ -62,6 +62,7 @@ def test_job_config_names_agent_arm(tmp_path) -> None:
     )
     assert config["agents"] == [
         {
+            "env": {"CODEX_FORCE_AUTH_JSON": "true"},
             "import_path": "symnav_bench.agents.codex:SymnavCodex",
             "kwargs": {"reasoning_effort": "e", "symnav_sha": "c" * 40},
             "model_name": "m",

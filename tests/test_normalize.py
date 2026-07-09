@@ -33,6 +33,8 @@ def test_normalize_trial_writes_cell_and_commands(tmp_path) -> None:
         json.dumps({"steps": [{"tool_calls": [{"function_name": "exec_command", "arguments": {"cmd": "rg Foo"}}]}]}),
         encoding="utf-8",
     )
+    (trial / "agent" / "codex.txt").write_text("agent stderr", encoding="utf-8")
+    (trial / "exception.txt").write_text("NonZeroAgentExitCodeError", encoding="utf-8")
     identity = CellIdentity(AgentSpec("codex", "m", "e"), "stock", "task", 0)
     cell = normalize_trial(
         trial,
@@ -47,6 +49,10 @@ def test_normalize_trial_writes_cell_and_commands(tmp_path) -> None:
     assert cell.command_counts["search"] == 1
     loaded = Cell.load(tmp_path / "out" / identity.dirname() / "cell.json")
     assert loaded.identity == identity
+    raw_dir = tmp_path / "out" / identity.dirname() / "raw"
+    assert (raw_dir / "result.json").is_file()
+    assert (raw_dir / "exception.txt").read_text(encoding="utf-8") == "NonZeroAgentExitCodeError"
+    assert (raw_dir / "agent" / "codex.txt").read_text(encoding="utf-8") == "agent stderr"
 
 
 def test_missing_trial_becomes_error(tmp_path) -> None:

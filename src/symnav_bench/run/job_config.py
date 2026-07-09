@@ -47,4 +47,7 @@ def _agent_config(
     kwargs = {"reasoning_effort": spec.effort}
     if symnav_sha is not None:
         kwargs["symnav_sha"] = symnav_sha
-    return {**base, "model_name": spec.model, "kwargs": kwargs}
+    config: dict[str, object] = {**base, "model_name": spec.model, "kwargs": kwargs}
+    if spec.agent == "codex":
+        config["env"] = {"CODEX_FORCE_AUTH_JSON": "true"}
+    return config

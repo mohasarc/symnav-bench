@@ -44,6 +44,8 @@ def normalize_trial(
     trajectory = _read_json(trial_dir / "agent" / "trajectory.json") if trial_dir else {}
     commands = extract_commands(trajectory)
     write_commands_jsonl(commands, cell_dir / "commands.jsonl")
+    if trial_dir:
+        _copy_raw_trial_files(trial_dir, cell_dir / "raw")
     if not result and status != "error":
         status = "error"
         error = error or "missing or empty trial result"
@@ -65,6 +67,32 @@ def normalize_trial(
         encoding="utf-8",
     )
     return cell
+
+
+def _copy_raw_trial_files(trial_dir: Path, raw_dir: Path) -> None:
+    for path in _raw_trial_paths(trial_dir):
+        relative = path.relative_to(trial_dir)
+        target = raw_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_dir():
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(path, target)
+        else:
+            shutil.copy2(path, target)
+
+
+def _raw_trial_paths(trial_dir: Path) -> list[Path]:
+    paths: list[Path] = []
+    for name in ("result.json", "exception.txt", "trial.log"):
+        path = trial_dir / name
+        if path.is_file():
+            paths.append(path)
+    for name in ("agent", "verifier", "steps"):
+        path = trial_dir / name
+        if path.exists():
+            paths.append(path)
+    return paths
 
 
 def _read_json(path: Path) -> dict[str, Any]:
