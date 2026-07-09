@@ -44,8 +44,9 @@ def codex_agents_md(symnav: bool) -> str:
                 "Start TypeScript exploration with `symnav resolve <name>` or `symnav overview <file> --depth 0`.",
                 "Use symnav to choose what code to inspect, then read/search/test/edit normally as needed.",
                 "Run overview only on a .ts or .tsx file, never on a directory; use resolve or rg --files first when you need to find the file.",
-                "Start with overview --depth 0 for a file map, then expand with --depth or --at only where more structure helps.",
-                "Use refs before changing exported behavior or call signatures; use graph when wrappers, adapters, callbacks, or dispatchers hide the call path.",
+                "When overview shows a useful symbol or file region, continue exploring with `overview --depth <n>` or `overview --at <symbol-or-header>` on that target.",
+                "When context, refs, or graph surfaces a useful caller or callee, run symnav again on that symbol to keep following the path.",
+                "Use refs before changing exported behavior or call signatures; use graph to explore callers and callees, increasing depth or changing direction as the results suggest.",
             ]
         )
     return "\n".join(lines) + "\n"

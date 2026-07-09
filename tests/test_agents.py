@@ -48,6 +48,9 @@ def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
     assert "read/search/test/edit normally" in codex_agents_md(symnav=True)
     assert "never on a directory" in codex_agents_md(symnav=True)
     assert "Use refs" in codex_agents_md(symnav=True)
+    assert "continue exploring" in codex_agents_md(symnav=True)
+    assert "run symnav again" in codex_agents_md(symnav=True)
+    assert "increasing depth or changing direction" in codex_agents_md(symnav=True)
 
 
 def test_claude_settings_hook() -> None:
