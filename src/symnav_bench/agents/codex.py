@@ -8,9 +8,9 @@ from symnav_bench.agents.install import (
     CODEX_AUTH_DOMAINS,
     INSTALL_DOMAINS,
     InstallStep,
+    append_text_step,
     symnav_install_script,
     toolchain_root_step,
-    write_text_step,
 )
 from symnav_bench.agents.pier_compat import Codex
 
@@ -19,7 +19,7 @@ class StockCodex(Codex):
     def __init__(self, **kwargs):
         self._symnav_bench_steps = (
             toolchain_root_step(),
-            write_text_step("/app/AGENTS.md", codex_agents_md(symnav=False)),
+            append_text_step("/app/AGENTS.md", codex_agents_md(symnav=False)),
         )
         super().__init__(**kwargs)
 
@@ -37,15 +37,15 @@ class StockCodex(Codex):
 
 class SymnavCodex(StockCodex):
     def __init__(self, *, symnav_sha: str, **kwargs):
-        steps = (
-            write_text_step("/app/AGENTS.md", codex_agents_md(symnav=True)),
+        self._symnav_bench_steps = (
+            toolchain_root_step(),
+            append_text_step("/app/AGENTS.md", codex_agents_md(symnav=True)),
             InstallStep(
                 "install symnav",
                 symnav_install_script(symnav_sha, codex=True),
             ),
         )
-        super().__init__(**kwargs)
-        self._symnav_bench_steps = (*self._symnav_bench_steps, *steps)
+        Codex.__init__(self, **kwargs)
 
     def network_allowlist(self) -> NetworkAllowlist:
         domains = [*super().network_allowlist().domains, *INSTALL_DOMAINS]

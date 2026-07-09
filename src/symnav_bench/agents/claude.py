@@ -7,6 +7,7 @@ from symnav_bench.agents.directives import NUDGE_JS, claude_directive, claude_se
 from symnav_bench.agents.install import (
     INSTALL_DOMAINS,
     InstallStep,
+    append_text_step,
     symnav_install_script,
     toolchain_root_step,
     write_text_step,
@@ -18,7 +19,8 @@ class SymnavClaudeCode(ClaudeCode):
     def __init__(self, *, symnav_sha: str, **kwargs):
         self._symnav_bench_steps = (
             toolchain_root_step(),
-            write_text_step("/app/AGENTS.md", claude_directive()),
+            append_text_step("/app/AGENTS.md", claude_directive()),
+            append_text_step("/app/CLAUDE.md", claude_directive(), unless_same_file_as="/app/AGENTS.md"),
             write_text_step("/app/.claude/settings.json", claude_settings_json()),
             write_text_step("/app/symnav-nudge.js", NUDGE_JS),
             InstallStep(
