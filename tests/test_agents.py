@@ -95,8 +95,10 @@ def test_workspace_capture_step_wraps_agent_binary(tmp_path) -> None:
     assert str(tmp_path / "agent") in step.command
     assert "workspace/app" in step.command
     assert "git -C /app diff >" in step.command
-    assert 'real_copy="$wrapper.symnav-bench-real"' in step.command
-    assert 'SYMNAV_BENCH_WORKSPACE_CAPTURE_DIR="$capture_dir" "$real"' in step.command
+    assert 'real_copy="$real.symnav-bench-real"' in step.command
+    assert 'mv "$real" "$real_copy"' in step.command
+    assert 'cat > "$real" <<EOF' in step.command
+    assert 'SYMNAV_BENCH_WORKSPACE_CAPTURE_DIR="$capture_dir" "$real_copy"' in step.command
 
 
 def test_workspace_capture_defaults_to_persisted_agent_logs() -> None:
