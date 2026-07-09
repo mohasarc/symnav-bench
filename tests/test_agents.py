@@ -41,7 +41,7 @@ def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
     assert "symnav" not in codex_agents_md(symnav=False).lower()
     assert "yield_time_ms" in codex_agents_md(symnav=True)
     assert "No exceptions; read the symnav skill first" in codex_agents_md(symnav=True)
-    assert "overview --depth 0" in codex_agents_md(symnav=True)
+    assert "symnav overview <file> --depth 0" in codex_agents_md(symnav=True)
     assert "installed globally" in codex_agents_md(symnav=True)
     assert "`symnav ...`" in codex_agents_md(symnav=True)
     assert "`symnav --cwd /app" not in codex_agents_md(symnav=True)
