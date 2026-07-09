@@ -34,6 +34,8 @@ def test_normalize_trial_writes_cell_and_commands(tmp_path) -> None:
         encoding="utf-8",
     )
     (trial / "agent" / "codex.txt").write_text("agent stderr", encoding="utf-8")
+    (trial / "agent" / "sessions" / "sessions").mkdir(parents=True)
+    (trial / "agent" / "sessions" / "sessions" / "ignored.jsonl").write_text("large", encoding="utf-8")
     (trial / "exception.txt").write_text("NonZeroAgentExitCodeError", encoding="utf-8")
     identity = CellIdentity(AgentSpec("codex", "m", "e"), "stock", "task", 0)
     cell = normalize_trial(
@@ -53,6 +55,7 @@ def test_normalize_trial_writes_cell_and_commands(tmp_path) -> None:
     assert (raw_dir / "result.json").is_file()
     assert (raw_dir / "exception.txt").read_text(encoding="utf-8") == "NonZeroAgentExitCodeError"
     assert (raw_dir / "agent" / "codex.txt").read_text(encoding="utf-8") == "agent stderr"
+    assert not (raw_dir / "agent" / "sessions").exists()
 
 
 def test_missing_trial_becomes_error(tmp_path) -> None:

@@ -74,12 +74,7 @@ def _copy_raw_trial_files(trial_dir: Path, raw_dir: Path) -> None:
         relative = path.relative_to(trial_dir)
         target = raw_dir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        if path.is_dir():
-            if target.exists():
-                shutil.rmtree(target)
-            shutil.copytree(path, target)
-        else:
-            shutil.copy2(path, target)
+        shutil.copy2(path, target)
 
 
 def _raw_trial_paths(trial_dir: Path) -> list[Path]:
@@ -88,11 +83,22 @@ def _raw_trial_paths(trial_dir: Path) -> list[Path]:
         path = trial_dir / name
         if path.is_file():
             paths.append(path)
-    for name in ("agent", "verifier", "steps"):
-        path = trial_dir / name
-        if path.exists():
+    for name in ("trajectory.json", "codex.txt", "claude-code.txt"):
+        path = trial_dir / "agent" / name
+        if path.is_file():
             paths.append(path)
+    for name in ("verifier", "steps"):
+        paths.extend(_raw_files_under(trial_dir / name))
     return paths
+
+
+def _raw_files_under(directory: Path) -> list[Path]:
+    if not directory.exists():
+        return []
+    try:
+        return [path for path in directory.rglob("*") if path.is_file()]
+    except OSError:
+        return []
 
 
 def _read_json(path: Path) -> dict[str, Any]:
