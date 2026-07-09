@@ -153,14 +153,19 @@ def _agent_version(result: dict[str, Any]) -> str | None:
 
 def _command_counts(commands: list[ExecutedCommand]) -> dict[str, Any]:
     symnav: dict[str, int] = {}
-    counts = {"search": 0, "read": 0, "other": 0, "timeouts": 0}
+    symnav_failures: dict[str, int] = {}
+    counts = {"search": 0, "read": 0, "other": 0, "timeouts": 0, "failures": 0}
     for command in commands:
         if command.timed_out:
             counts["timeouts"] += 1
+        if command.succeeded is False:
+            counts["failures"] += 1
         for tag in command.tags:
             if tag.startswith("symnav:"):
                 subcommand = tag.removeprefix("symnav:")
                 symnav[subcommand] = symnav.get(subcommand, 0) + 1
+                if command.succeeded is False:
+                    symnav_failures[subcommand] = symnav_failures.get(subcommand, 0) + 1
             elif tag in counts:
                 counts[tag] += 1
-    return {"symnav": symnav, **counts}
+    return {"symnav": symnav, "symnav_failures": symnav_failures, **counts}

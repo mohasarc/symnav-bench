@@ -35,7 +35,9 @@ def codex_agents_md(symnav: bool) -> str:
             [
                 "",
                 "Read .agents/skills/symnav/SKILL.md before TypeScript code exploration.",
+                "Run symnav as `symnav --cwd /app <command> ...`; do not call pnpm, /opt/symnav, or wrapper internals.",
                 "Prefer symnav overview, resolve, def, refs, context, and graph over raw file reads.",
+                "Use symnav first for TypeScript navigation, then fall back to text search only for non-TypeScript files or text that is not a symbol.",
             ]
         )
     return "\n".join(lines) + "\n"

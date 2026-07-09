@@ -32,6 +32,7 @@ class ArmComparison:
     left: ArmKey
     right: ArmKey
     effectiveness: EffectivenessStats
+    paired_tasks: list[str]
     matched_tasks: list[str]
     efficiency: EfficiencyStats
     holes: list[str]
@@ -60,11 +61,13 @@ def compare(cells: CellSet, left: ArmKey, right: ArmKey) -> ArmComparison:
     arms = cells.arms()
     left_cells = arms.get(left, [])
     right_cells = arms.get(right, [])
+    paired_tasks = _paired_tasks(left_cells, right_cells)
     matched_tasks = _matched_tasks(left_cells, right_cells)
     return ArmComparison(
         left=left,
         right=right,
         effectiveness=_effectiveness(left_cells, right_cells),
+        paired_tasks=paired_tasks,
         matched_tasks=matched_tasks,
         efficiency=_efficiency(left_cells, right_cells, matched_tasks),
         holes=_holes(left_cells, right_cells),
@@ -82,6 +85,12 @@ def _matched_tasks(left: list[Cell], right: list[Cell]) -> list[str]:
     left_solved = {cell.identity.task for cell in left if cell.solved}
     right_solved = {cell.identity.task for cell in right if cell.solved}
     return sorted(left_solved & right_solved)
+
+
+def _paired_tasks(left: list[Cell], right: list[Cell]) -> list[str]:
+    left_tasks = {cell.identity.task for cell in left}
+    right_tasks = {cell.identity.task for cell in right}
+    return sorted(left_tasks & right_tasks)
 
 
 def _effectiveness(left: list[Cell], right: list[Cell]) -> EffectivenessStats:

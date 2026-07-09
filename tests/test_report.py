@@ -20,6 +20,18 @@ def test_cell_set_loads_by_cell_json_and_groups_arms(tmp_path) -> None:
     assert list(loaded.arms())[0].condition_label == "stock"
 
 
+def test_cell_set_warns_when_f2p_solved_but_p2p_regresses(tmp_path) -> None:
+    cell = _cell("stock", "task", True)
+    cell.rewards["p2p"] = 0.5
+    path = tmp_path / cell.identity.dirname()
+    path.mkdir()
+    (path / "cell.json").write_text(json.dumps(cell.to_json()), encoding="utf-8")
+    loaded = CellSet.load(tmp_path)
+    assert loaded.warnings == (
+        f"{cell.identity.dirname()} has f2p=1.0 but p2p=0.5",
+    )
+
+
 def test_compare_uses_matched_solved_set() -> None:
     left = ArmKey("codex", "m", "e", "stock")
     right = ArmKey("codex", "m", "e", "symnav@abc")
@@ -31,6 +43,7 @@ def test_compare_uses_matched_solved_set() -> None:
         ]
     )
     result = compare(cells, left, right)
+    assert result.paired_tasks == ["a"]
     assert result.matched_tasks == ["a"]
     assert result.efficiency.left_cost == 2
     assert result.efficiency.right_steps == 5

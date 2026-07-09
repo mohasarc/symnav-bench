@@ -10,6 +10,11 @@ def test_symnav_install_script_pins_sha_and_builds() -> None:
     assert "git checkout 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'" in script
     assert "pnpm install --frozen-lockfile" in script
     assert "pnpm build" in script
+    assert "cp -R /opt/symnav/.agents/skills/symnav /app/.agents/skills/symnav" in script
+    assert "exec pnpm --dir /opt/symnav --filter symnav dev \"$@\"" in script
+    assert "exec pnpm --dir /opt/symnav --filter symnav dev -- \"$@\"" not in script
+    assert "ln -sf /app/bin/symnav /usr/local/bin/symnav" in script
+    assert "symnav --help >/dev/null" in script
     assert "/app/.git/info/exclude" in script
 
 
@@ -18,6 +23,7 @@ def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
     assert "symnav" not in codex_agents_md(symnav=False).lower()
     assert "yield_time_ms" in codex_agents_md(symnav=True)
     assert "symnav overview" in codex_agents_md(symnav=True)
+    assert "`symnav --cwd /app" in codex_agents_md(symnav=True)
 
 
 def test_claude_settings_hook() -> None:

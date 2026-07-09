@@ -27,6 +27,42 @@ def test_codex_exec_commands_extract_in_order() -> None:
     assert commands[0].tags == ("symnav:resolve",)
 
 
+def test_extracts_exit_code_from_matching_observation() -> None:
+    commands = extract_commands(
+        {
+            "steps": [
+                {
+                    "step_id": 2,
+                    "timestamp": "t1",
+                    "tool_calls": [
+                        {
+                            "tool_call_id": "ok",
+                            "function_name": "exec_command",
+                            "arguments": {"cmd": "symnav resolve Foo"},
+                        },
+                        {
+                            "tool_call_id": "bad",
+                            "function_name": "exec_command",
+                            "arguments": {"cmd": "symnav resolve Bar"},
+                        },
+                    ],
+                    "observation": {
+                        "results": [
+                            {"source_call_id": "ok", "content": "Process exited with code 0\nOutput:\nFoo\n"},
+                            {"source_call_id": "bad", "content": "Process exited with code 1\nOutput:\nnope\n"},
+                        ]
+                    },
+                }
+            ]
+        }
+    )
+    assert commands[0].exit_code == 0
+    assert commands[0].succeeded is True
+    assert commands[0].output_chars == len("Process exited with code 0\nOutput:\nFoo\n")
+    assert commands[1].exit_code == 1
+    assert commands[1].succeeded is False
+
+
 def test_claude_tools_extract_and_classify() -> None:
     commands = extract_commands(
         {
@@ -41,6 +77,13 @@ def test_claude_tools_extract_and_classify() -> None:
 
 def test_classification_matrix() -> None:
     assert classify("Bash", "symnav overview src/a.ts") == ("symnav:overview",)
+    assert classify("Bash", "pnpm --dir /opt/symnav --filter symnav dev --cwd /app context Foo") == (
+        "symnav:context",
+    )
+    assert classify("Bash", "pnpm --dir /opt/symnav --filter symnav exec tsx src/cli.ts --cwd /app refs Foo") == (
+        "symnav:refs",
+    )
+    assert classify("Bash", "rg -n symnav . | sed -n '1,20p'") == ("search",)
     assert classify("Bash", "git grep Foo") == ("search",)
     assert classify("Bash", "sed -n '1,2p' src/a.ts") == ("read",)
     assert classify("Bash", "npm test") == ("other",)

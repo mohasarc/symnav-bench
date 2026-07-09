@@ -26,6 +26,9 @@ class ExecutedCommand:
     args: dict[str, Any]
     tags: tuple[str, ...]
     timed_out: bool
+    exit_code: int | None
+    succeeded: bool | None
+    output_chars: int
 
 
 def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
@@ -43,6 +46,7 @@ def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
                 args = {}
             command = _primary_command(tool, args)
             observation = _observation_text(step, tool_call)
+            exit_code = _exit_code(observation)
             commands.append(
                 ExecutedCommand(
                     step_id=_step_id(step, step_index),
@@ -52,6 +56,9 @@ def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
                     args=dict(args),
                     tags=classify(tool, command),
                     timed_out=_timed_out(observation),
+                    exit_code=exit_code,
+                    succeeded=None if exit_code is None else exit_code == 0,
+                    output_chars=len(observation),
                 )
             )
     return commands
@@ -109,6 +116,21 @@ def _step_id(step: dict[str, Any], fallback: int) -> int:
 
 def _observation_text(step: dict[str, Any], tool_call: dict[str, Any]) -> str:
     chunks: list[str] = []
+    observation = step.get("observation")
+    call_id = tool_call.get("tool_call_id")
+    if isinstance(observation, dict):
+        results = observation.get("results")
+        if isinstance(results, list):
+            for result in results:
+                if not isinstance(result, dict):
+                    continue
+                if call_id is not None and result.get("source_call_id") != call_id:
+                    continue
+                content = result.get("content")
+                if isinstance(content, str):
+                    chunks.append(content)
+            if chunks:
+                return "\n".join(chunks)
     for source in (step, tool_call):
         for key in ("observation", "output", "result", "content"):
             value = source.get(key)
@@ -122,17 +144,57 @@ def _timed_out(text: str) -> bool:
     return any(marker in lowered for marker in TIMEOUT_MARKERS)
 
 
+def _exit_code(text: str) -> int | None:
+    match = re.search(r"Process exited with code (-?\d+)", text)
+    return int(match.group(1)) if match else None
+
+
 def _symnav_subcommand(command: str) -> str | None:
+    tokens = _shell_tokens(command)
+    for index, token in enumerate(tokens):
+        if _is_symnav_executable(token):
+            return _next_symnav_subcommand(tokens[index + 1 :])
+    if _is_pnpm_symnav_invocation(tokens):
+        return _next_symnav_subcommand(tokens)
+    if "symnav" in command:
+        match = re.search(r"\bsymnav\s+([a-z-]+)", command)
+        return match.group(1) if match else None
+    return None
+
+
+def _shell_tokens(command: str) -> list[str]:
     try:
         tokens = shlex.split(command)
     except ValueError:
         tokens = command.split()
-    for index, token in enumerate(tokens):
-        if token.endswith("symnav") or token == "symnav-bench":
-            if index + 1 < len(tokens):
-                return tokens[index + 1]
-    match = re.search(r"\bsymnav\s+([a-z-]+)", command)
-    return match.group(1) if match else None
+    if len(tokens) >= 3 and tokens[0].endswith("bash") and tokens[1] == "-lc":
+        try:
+            return shlex.split(tokens[2])
+        except ValueError:
+            return tokens[2].split()
+    return tokens
+
+
+def _is_symnav_executable(token: str) -> bool:
+    return token == "symnav" or token.endswith("/symnav")
+
+
+def _is_pnpm_symnav_invocation(tokens: list[str]) -> bool:
+    return (
+        "pnpm" in tokens
+        and "symnav" in tokens
+        and any(token.endswith("/symnav") or token == "/opt/symnav" for token in tokens)
+    )
+
+
+def _next_symnav_subcommand(tokens: list[str]) -> str | None:
+    commands = {"overview", "resolve", "def", "refs", "context", "graph", "stats"}
+    for token in tokens:
+        if token in commands:
+            return token
+        if token in {"--help", "-h"}:
+            return "help"
+    return None
 
 
 def _starts_with(command: str, words: tuple[str, ...]) -> bool:

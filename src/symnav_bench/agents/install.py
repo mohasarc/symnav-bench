@@ -47,12 +47,18 @@ def symnav_install_script(symnav_sha: str, *, codex: bool) -> str:
         f"git checkout '{escaped_sha}'",
         "pnpm install --frozen-lockfile",
         "pnpm build",
+        "rm -rf /app/.agents/skills/symnav",
+        "cp -R /opt/symnav/.agents/skills/symnav /app/.agents/skills/symnav",
         "cat > /app/bin/symnav <<'EOF'",
         "#!/bin/sh",
-        "exec pnpm --dir /opt/symnav --filter symnav dev -- \"$@\"",
+        "exec pnpm --dir /opt/symnav --filter symnav dev \"$@\"",
         "EOF",
         "chmod +x /app/bin/symnav",
+        "ln -sf /app/bin/symnav /usr/local/bin/symnav",
+        "symnav --help >/dev/null",
         "printf '%s\\n' /app/bin/symnav /opt/symnav /app/.agents >> /app/.git/info/exclude",
+        "git config --global user.name symnav-bench",
+        "git config --global user.email symnav-bench@example.invalid",
     ]
     if codex:
         lines.append("mkdir -p /app/.codex")
