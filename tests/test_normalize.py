@@ -103,6 +103,31 @@ def test_normalize_trial_writes_workspace_git_artifacts(tmp_path) -> None:
     assert (workspace_artifacts / "diff-stat.txt").is_file()
 
 
+def test_normalize_trial_counts_claude_symnav_skill_tool(tmp_path) -> None:
+    trial = tmp_path / "trial"
+    (trial / "agent").mkdir(parents=True)
+    (trial / "result.json").write_text(
+        json.dumps({"verifier_result": {"rewards": {"f2p": 0.0}}}),
+        encoding="utf-8",
+    )
+    (trial / "agent" / "trajectory.json").write_text(
+        json.dumps({"steps": [{"tool_calls": [{"function_name": "Skill", "arguments": {"skill": "symnav"}}]}]}),
+        encoding="utf-8",
+    )
+    identity = CellIdentity(AgentSpec("claude", "m", "e"), "symnav@abc", "task", 0)
+
+    cell = normalize_trial(
+        trial,
+        identity,
+        HarnessMeta("image", "pier", "deep", "abc"),
+        "completed",
+        None,
+        tmp_path / "out",
+    )
+
+    assert cell.command_counts["symnav_skill_reads"] == 1
+
+
 def test_normalize_trial_copies_captured_workspace_artifacts(tmp_path) -> None:
     trial = tmp_path / "trial"
     captured = trial / "agent" / "workspace" / "app"

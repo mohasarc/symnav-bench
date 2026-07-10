@@ -241,4 +241,5 @@ def _symnav_skill_reads(commands: list[ExecutedCommand]) -> int:
         for command in commands
         if ".agents/skills/symnav/SKILL.md" in command.command
         or "/app/.agents/skills/symnav/SKILL.md" in command.command
+        or (command.tool.lower() == "skill" and command.args.get("skill") == "symnav")
     )

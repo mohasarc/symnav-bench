@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 
-from symnav_bench.cells.trajectory import classify, extract_commands, write_commands_jsonl
+from symnav_bench.cells.trajectory import (
+    MAX_COMMAND_OUTPUT_CHARS,
+    classify,
+    extract_commands,
+    write_commands_jsonl,
+)
 
 
 def test_codex_exec_commands_extract_in_order() -> None:
@@ -59,6 +64,8 @@ def test_extracts_exit_code_from_matching_observation() -> None:
     assert commands[0].exit_code == 0
     assert commands[0].succeeded is True
     assert commands[0].output_chars == len("Process exited with code 0\nOutput:\nFoo\n")
+    assert commands[0].output == "Process exited with code 0\nOutput:\nFoo\n"
+    assert commands[0].output_truncated is False
     assert commands[1].exit_code == 1
     assert commands[1].succeeded is False
 
@@ -171,7 +178,29 @@ def test_timeout_and_jsonl(tmp_path) -> None:
     assert commands[0].timed_out is True
     path = tmp_path / "commands.jsonl"
     write_commands_jsonl(commands, path)
-    assert json.loads(path.read_text(encoding="utf-8"))["timed_out"] is True
+    row = json.loads(path.read_text(encoding="utf-8"))
+    assert row["timed_out"] is True
+    assert row["output"] == "command timed out"
+    assert row["output_truncated"] is False
+
+
+def test_long_output_is_truncated_but_original_size_is_kept() -> None:
+    output = f"Process exited with code 0\nOutput:\n{'a' * (MAX_COMMAND_OUTPUT_CHARS + 1)}"
+    commands = extract_commands(
+        {
+            "steps": [
+                {
+                    "tool_calls": [{"function_name": "exec_command", "arguments": {"cmd": "cat huge.txt"}}],
+                    "observation": output,
+                }
+            ]
+        }
+    )
+    assert commands[0].output_chars == len(output)
+    assert commands[0].output_truncated is True
+    assert len(commands[0].output) <= MAX_COMMAND_OUTPUT_CHARS
+    assert "[... truncated " in commands[0].output
+    assert commands[0].output.startswith("Process exited with code 0")
 
 
 def test_malformed_trajectory_returns_empty() -> None:

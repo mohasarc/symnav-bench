@@ -16,6 +16,8 @@ TIMEOUT_MARKERS: tuple[str, ...] = (
     "yielded before completion",
 )
 
+MAX_COMMAND_OUTPUT_CHARS = 200_000
+
 
 @dataclass(frozen=True)
 class ExecutedCommand:
@@ -29,6 +31,8 @@ class ExecutedCommand:
     exit_code: int | None
     succeeded: bool | None
     output_chars: int
+    output_truncated: bool
+    output: str
 
 
 def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
@@ -53,6 +57,7 @@ def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
             if command and session_id:
                 commands_by_session[session_id] = command
             exit_code = _exit_code(observation)
+            output = _truncate_output(observation)
             commands.append(
                 ExecutedCommand(
                     step_id=_step_id(step, step_index),
@@ -65,6 +70,8 @@ def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
                     exit_code=exit_code,
                     succeeded=None if exit_code is None else exit_code == 0,
                     output_chars=len(observation),
+                    output_truncated=len(observation) > MAX_COMMAND_OUTPUT_CHARS,
+                    output=output,
                 )
             )
     return commands
@@ -143,6 +150,23 @@ def _observation_text(step: dict[str, Any], tool_call: dict[str, Any]) -> str:
             if isinstance(value, str):
                 chunks.append(value)
     return "\n".join(chunks)
+
+
+def _truncate_output(text: str) -> str:
+    if len(text) <= MAX_COMMAND_OUTPUT_CHARS:
+        return text
+    omitted = len(text) - MAX_COMMAND_OUTPUT_CHARS
+    while True:
+        marker = f"\n[... truncated {omitted} chars ...]\n"
+        retained = MAX_COMMAND_OUTPUT_CHARS - len(marker)
+        if retained <= 0:
+            return marker[:MAX_COMMAND_OUTPUT_CHARS]
+        head = retained // 2
+        tail = retained - head
+        next_omitted = len(text) - head - tail
+        if next_omitted == omitted:
+            return f"{text[:head]}{marker}{text[-tail:]}"
+        omitted = next_omitted
 
 
 def _timed_out(text: str) -> bool:
