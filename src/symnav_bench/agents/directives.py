@@ -2,26 +2,20 @@ from __future__ import annotations
 
 import json
 
-from symnav_bench.run_spec import SymnavSkillVariant
+from symnav_bench.run_spec import SymnavSkillVariant, symnav_variant_commands
 
 
 def nudge_js(symnav_skill_variant: SymnavSkillVariant = "all") -> str:
-    command_text = (
-        "overview, resolve, def, refs, context, and graph"
-        if symnav_skill_variant == "all"
-        else f"symnav {symnav_skill_variant}"
-    )
+    command_text = command_list_text(symnav_skill_variant)
+    noun = command_noun(symnav_skill_variant)
     return f"""
 const tool = process.env.CLAUDE_TOOL_NAME || "";
 const input = JSON.parse(process.env.CLAUDE_TOOL_INPUT || "{{}}");
 const text = input.command || input.pattern || input.file_path || "";
 if (/\\b(rg|grep|find|cat|sed|head|awk)\\b/.test(text) && !/\\bsymnav\\b/.test(text)) {{
-  console.error("The global {command_text} command is available for TypeScript symbol navigation in this benchmark arm. Invoke it alongside normal reads and search.");
+  console.error("The global {command_text} {noun} available for TypeScript symbol navigation in this benchmark arm. Invoke it alongside normal reads and search.");
 }}
 """.strip()
-
-
-NUDGE_JS = nudge_js()
 
 
 def claude_directive(symnav_skill_variant: SymnavSkillVariant = "all") -> str:
@@ -59,15 +53,44 @@ def _symnav_lines(symnav_skill_variant: SymnavSkillVariant) -> list[str]:
             "Normal reads, search, tests, and edits remain available whenever they help.",
             "Run overview only on a .ts or .tsx file, never on a directory; use resolve or rg --files first when you need to find the file.",
         ]
+    commands = symnav_variant_commands(symnav_skill_variant)
+    commands_text = command_list_text(symnav_skill_variant)
+    noun = command_noun(symnav_skill_variant)
+    invocation_text = " or ".join(f"`symnav {command} ...`" for command in commands)
     lines = [
         f"Always read .agents/skills/symnav-{symnav_skill_variant}/SKILL.md before starting any work. No exceptions; read the symnav-{symnav_skill_variant} skill first.",
-        f"The `symnav {symnav_skill_variant}` command is installed globally. Run it exactly as `symnav {symnav_skill_variant} ...` from any shell.",
-        f"The `symnav {symnav_skill_variant}` command provides deterministic TypeScript symbol navigation.",
+        f"The {commands_text} {noun} installed globally. Run {command_pronoun(symnav_skill_variant)} exactly as {invocation_text} from any shell.",
+        f"{command_subject(symnav_skill_variant)} {command_verb(symnav_skill_variant)} deterministic TypeScript symbol navigation.",
         "Normal reads, search, tests, and edits remain available whenever they help.",
     ]
-    if symnav_skill_variant == "overview":
+    if "overview" in commands:
         lines.append("Run overview only on a .ts or .tsx file, never on a directory; use rg --files first when you need to find the file.")
     return lines
+
+
+def command_list_text(symnav_skill_variant: SymnavSkillVariant) -> str:
+    if symnav_skill_variant == "all":
+        return "overview, resolve, def, refs, context, and graph"
+    return " and ".join(f"`symnav {command}`" for command in symnav_variant_commands(symnav_skill_variant))
+
+
+def command_noun(symnav_skill_variant: SymnavSkillVariant) -> str:
+    return "commands are" if len(symnav_variant_commands(symnav_skill_variant)) > 1 else "command is"
+
+
+def command_pronoun(symnav_skill_variant: SymnavSkillVariant) -> str:
+    return "them" if len(symnav_variant_commands(symnav_skill_variant)) > 1 else "it"
+
+
+def command_subject(symnav_skill_variant: SymnavSkillVariant) -> str:
+    return "These commands" if len(symnav_variant_commands(symnav_skill_variant)) > 1 else "This command"
+
+
+def command_verb(symnav_skill_variant: SymnavSkillVariant) -> str:
+    return "provide" if len(symnav_variant_commands(symnav_skill_variant)) > 1 else "provides"
+
+
+NUDGE_JS = nudge_js()
 
 
 def claude_settings_json() -> str:

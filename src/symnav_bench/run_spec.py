@@ -6,7 +6,22 @@ from typing import Literal, cast
 
 AgentName = Literal["claude", "codex"]
 ConditionKind = Literal["stock", "symnav"]
-SymnavSkillVariant = Literal["all", "overview", "resolve", "def", "refs", "context", "graph"]
+SymnavCommand = Literal["overview", "resolve", "def", "refs", "context", "graph"]
+SymnavSkillVariant = Literal[
+    "all",
+    "overview",
+    "resolve",
+    "def",
+    "refs",
+    "context",
+    "graph",
+    "overview-refs",
+    "overview-context",
+    "overview-def",
+    "overview-graph",
+    "resolve-graph",
+]
+SYMNAV_COMMANDS: tuple[SymnavCommand, ...] = ("overview", "resolve", "def", "refs", "context", "graph")
 SYMNAV_SKILL_VARIANTS: tuple[SymnavSkillVariant, ...] = (
     "all",
     "overview",
@@ -15,6 +30,11 @@ SYMNAV_SKILL_VARIANTS: tuple[SymnavSkillVariant, ...] = (
     "refs",
     "context",
     "graph",
+    "overview-refs",
+    "overview-context",
+    "overview-def",
+    "overview-graph",
+    "resolve-graph",
 )
 
 
@@ -73,12 +93,24 @@ def parse_conditions(value: str, symnav_sha: str | None) -> list[Condition]:
         elif item == "symnav":
             conditions.append(Condition("symnav", symnav_sha))
         elif item.startswith("symnav-"):
-            variant = item.removeprefix("symnav-")
-            if variant == "ref":
-                variant = "refs"
+            variant = normalize_symnav_skill_variant(item.removeprefix("symnav-"))
             if variant not in SYMNAV_SKILL_VARIANTS or variant == "all":
                 raise ValueError(f"unknown condition {item!r}")
             conditions.append(Condition("symnav", symnav_sha, cast(SymnavSkillVariant, variant)))
         else:
             raise ValueError(f"unknown condition {item!r}")
     return conditions
+
+
+def normalize_symnav_skill_variant(value: str) -> str:
+    parts = ["refs" if part == "ref" else part for part in value.split("-")]
+    return "-".join(parts)
+
+
+def symnav_variant_commands(symnav_skill_variant: SymnavSkillVariant) -> tuple[SymnavCommand, ...]:
+    if symnav_skill_variant == "all":
+        return SYMNAV_COMMANDS
+    commands = tuple(symnav_skill_variant.split("-"))
+    if not all(command in SYMNAV_COMMANDS for command in commands):
+        raise ValueError(f"bad symnav skill variant {symnav_skill_variant!r}")
+    return cast(tuple[SymnavCommand, ...], commands)

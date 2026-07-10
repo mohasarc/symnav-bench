@@ -29,11 +29,15 @@ def test_condition_label_and_cell_dirname() -> None:
 
 def test_command_specific_condition_label_and_alias() -> None:
     sha = "abc123def4569999999999999999999999999999"
-    conditions = parse_conditions("stock,symnav-overview,symnav-ref", sha)
+    conditions = parse_conditions("stock,symnav-overview,symnav-ref,symnav-overview-ref,symnav-resolve-graph", sha)
     assert conditions == [
         Condition("stock"),
         Condition("symnav", sha, "overview"),
         Condition("symnav", sha, "refs"),
+        Condition("symnav", sha, "overview-refs"),
+        Condition("symnav", sha, "resolve-graph"),
     ]
     assert conditions[1].label == "symnav-overview@abc123def456"
     assert conditions[2].label == "symnav-refs@abc123def456"
+    assert conditions[3].label == "symnav-overview-refs@abc123def456"
+    assert conditions[4].label == "symnav-resolve-graph@abc123def456"

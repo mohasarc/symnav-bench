@@ -32,7 +32,7 @@ def test_symnav_install_script_pins_sha_and_builds() -> None:
 
 def test_symnav_install_script_can_limit_to_one_command() -> None:
     script = symnav_install_script("a" * 40, codex=True, skill_variant="overview")
-    assert "allowed_command='overview'" in script
+    assert "allowed_commands='overview'" in script
     assert "skill_help_path='/app/.agents/skills/symnav-overview/SKILL.md'" in script
     assert "--help|-h|help)" in script
     assert "Unsupported symnav invocation for this benchmark arm." in script
@@ -44,6 +44,21 @@ def test_symnav_install_script_can_limit_to_one_command() -> None:
     assert "name: symnav-overview" in symnav_skill_markdown("overview")
     assert "Symbol/fold tree" not in symnav_skill_markdown("overview")
     assert "`overview` prints a symbol and fold tree" in symnav_skill_markdown("overview")
+
+
+def test_symnav_install_script_can_limit_to_paired_commands() -> None:
+    script = symnav_install_script("a" * 40, codex=True, skill_variant="overview-refs")
+    skill = symnav_skill_markdown("overview-refs")
+    assert "allowed_commands='overview refs'" in script
+    assert "skill_help_path='/app/.agents/skills/symnav-overview-refs/SKILL.md'" in script
+    assert "cat > /app/.agents/skills/symnav-overview-refs/SKILL.md" in script
+    assert "for command in $allowed_commands" in script
+    assert "name: symnav-overview-refs" in skill
+    assert "symnav overview ..." in skill
+    assert "symnav refs ..." in skill
+    assert "symnav context" not in skill
+    assert "Other symnav commands" not in skill
+    assert "only" not in skill
 
 
 def test_toolchain_root_creates_claude_compat_links() -> None:
@@ -85,8 +100,19 @@ def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
 def test_codex_agents_md_can_describe_one_symnav_command() -> None:
     text = codex_agents_md(symnav=True, symnav_skill_variant="context")
     assert ".agents/skills/symnav-context/SKILL.md" in text
-    assert "The `symnav context` command provides deterministic TypeScript symbol navigation" in text
+    assert "This command provides deterministic TypeScript symbol navigation" in text
     assert "Run it exactly as `symnav context ...`" in text
+    assert "overview, resolve, def, refs, context, and graph" not in text
+
+
+def test_codex_agents_md_can_describe_paired_symnav_commands() -> None:
+    text = codex_agents_md(symnav=True, symnav_skill_variant="overview-refs")
+    assert ".agents/skills/symnav-overview-refs/SKILL.md" in text
+    assert "read the symnav-overview-refs skill first" in text
+    assert "`symnav overview` and `symnav refs` commands are installed globally" in text
+    assert "Run them exactly as `symnav overview ...` or `symnav refs ...`" in text
+    assert "These commands provide deterministic TypeScript symbol navigation" in text
+    assert "symnav context" not in text
     assert "overview, resolve, def, refs, context, and graph" not in text
 
 

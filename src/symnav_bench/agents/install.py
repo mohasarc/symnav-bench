@@ -5,7 +5,7 @@ import shlex
 import textwrap
 from dataclasses import dataclass
 
-from symnav_bench.run_spec import SymnavSkillVariant
+from symnav_bench.run_spec import SymnavCommand, SymnavSkillVariant, symnav_variant_commands
 
 
 INSTALL_DOMAINS: tuple[str, ...] = (
@@ -161,7 +161,7 @@ def _wrap_binary_lines(binary: str) -> list[str]:
 
 def symnav_install_script(symnav_sha: str, *, codex: bool, skill_variant: SymnavSkillVariant = "all") -> str:
     escaped_sha = symnav_sha.replace("'", "")
-    allowed_command = "" if skill_variant == "all" else skill_variant
+    allowed_commands = "" if skill_variant == "all" else " ".join(symnav_variant_commands(skill_variant))
     skill_help_path = "" if skill_variant == "all" else f"/app/.agents/skills/symnav-{skill_variant}/SKILL.md"
     lines = [
         "set -eu",
@@ -176,9 +176,9 @@ def symnav_install_script(symnav_sha: str, *, codex: bool, skill_variant: Symnav
         *_write_skill_variant_lines(skill_variant),
         "cat > /app/bin/symnav <<'EOF'",
         "#!/bin/sh",
-        f"allowed_command='{allowed_command}'",
+        f"allowed_commands='{allowed_commands}'",
         f"skill_help_path='{skill_help_path}'",
-        "if [ -n \"$allowed_command\" ]; then",
+        "if [ -n \"$allowed_commands\" ]; then",
         "  if [ \"$#\" -eq 0 ]; then",
         "    cat \"$skill_help_path\"",
         "    exit 0",
@@ -192,7 +192,11 @@ def symnav_install_script(symnav_sha: str, *, codex: bool, skill_variant: Symnav
         "    esac",
         "    case \"$arg\" in",
         "      overview|resolve|def|refs|context|graph|stats)",
-        "        if [ \"$arg\" != \"$allowed_command\" ]; then",
+        "        allowed=0",
+        "        for command in $allowed_commands; do",
+        "          if [ \"$arg\" = \"$command\" ]; then allowed=1; fi",
+        "        done",
+        "        if [ \"$allowed\" -ne 1 ]; then",
         "          echo \"Unsupported symnav invocation for this benchmark arm.\" >&2",
         "          exit 2",
         "        fi",
@@ -237,32 +241,33 @@ def _write_skill_variant_lines(skill_variant: SymnavSkillVariant) -> list[str]:
 
 
 def symnav_skill_markdown(skill_variant: SymnavSkillVariant) -> str:
-    body = _variant_body(skill_variant)
-    return (
-        textwrap.dedent(
-            f"""\
-            ---
-            name: symnav-{skill_variant}
-            description: Use `symnav {skill_variant}` for deterministic TypeScript symbol navigation in this benchmark arm.
-            ---
-
-            `symnav {skill_variant}` is installed globally.
-
-            ```
-            symnav {skill_variant} ...
-            ```
-
-            Use normal reads, search, tests, and edits whenever they help.
-
-            {body}
-            """
-        ).strip()
-        + "\n"
+    commands = symnav_variant_commands(skill_variant)
+    body = "\n\n".join(_variant_body(command) for command in commands)
+    commands_text = " and ".join(f"`symnav {command}`" for command in commands)
+    noun = "commands are" if len(commands) > 1 else "command is"
+    return "\n".join(
+        [
+            "---",
+            f"name: symnav-{skill_variant}",
+            f"description: Use {commands_text} for deterministic TypeScript symbol navigation in this benchmark arm.",
+            "---",
+            "",
+            f"{commands_text} {noun} installed globally.",
+            "",
+            "```",
+            *(f"symnav {command} ..." for command in commands),
+            "```",
+            "",
+            "Use normal reads, search, tests, and edits whenever they help.",
+            "",
+            body,
+            "",
+        ]
     )
 
 
-def _variant_body(skill_variant: SymnavSkillVariant) -> str:
-    bodies: dict[SymnavSkillVariant, str] = {
+def _variant_body(command: SymnavCommand) -> str:
+    bodies: dict[SymnavCommand, str] = {
         "overview": """\
 ## `overview`
 
@@ -342,4 +347,4 @@ $ symnav graph src/orders.ts::charge --incoming --depth 2 --all
 `--incoming` follows callers. `--outgoing` follows callees. `--depth` controls hop count. Use `--page`, `--page-size`, or `--all` for larger graphs.
 """,
     }
-    return textwrap.dedent(bodies[skill_variant]).strip()
+    return textwrap.dedent(bodies[command]).strip()
