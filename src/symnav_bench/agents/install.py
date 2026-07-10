@@ -307,6 +307,8 @@ $ symnav def src/orders.ts::PaymentProcessor::charge
 ```
 
 Targets are suffix patterns. A short name works when it is unique. If the target is ambiguous, `def` prints candidates; copy a more specific candidate from that output. Quote targets that contain shell-sensitive characters.
+
+Use workspace-relative file paths in targets. Write `src/orders.ts::charge`, not `/app/src/orders.ts::charge`. If `def` says a target is ambiguous, choose the printed candidate that matches the symbol you need and retry with that exact candidate string. If it says no symbol target was found, re-check that the file path is workspace-relative and that the symbol name appears in prior output.
 """,
         "refs": """\
 ## `refs`
@@ -319,7 +321,9 @@ $ symnav refs src/orders.ts::charge --all
 $ symnav refs src/orders.ts::charge --page 2 --page-size 50
 ```
 
-Targets are suffix patterns. Use `--all` for one complete listing, or page through large result sets. `--full-lines` prints untrimmed source previews.
+Targets are suffix patterns. Use workspace-relative file paths in targets. Write `src/orders.ts::charge`, not `/app/src/orders.ts::charge`. Use `--all` for one complete listing, or page through large result sets. `--full-lines` prints untrimmed source previews.
+
+If `refs` says a target is ambiguous, choose the printed candidate that matches the symbol you need and retry with that exact candidate string. If it says no symbol target was found, re-check that the file path is workspace-relative and that the symbol name appears in prior output.
 """,
         "context": """\
 ## `context`
@@ -331,7 +335,9 @@ $ symnav context src/orders.ts::charge
 $ symnav context src/orders.ts::PaymentProcessor::charge
 ```
 
-Targets are suffix patterns and must identify one workspace symbol. `context` reports direct statically resolved callers and callees in workspace files. If a target is ambiguous, copy one of the printed candidates and run the command again.
+Targets are suffix patterns and must identify one workspace symbol. Use workspace-relative file paths in targets. Write `src/orders.ts::charge`, not `/app/src/orders.ts::charge`. `context` reports direct statically resolved callers and callees in workspace files.
+
+If `context` says a target is ambiguous, choose the printed candidate that matches the symbol you need and retry with that exact candidate string. If it says no symbol target was found, re-check that the file path is workspace-relative and that the symbol name appears in prior output.
 """,
         "graph": """\
 ## `graph`
@@ -344,7 +350,9 @@ $ symnav graph src/orders.ts::charge --outgoing --depth 3
 $ symnav graph src/orders.ts::charge --incoming --depth 2 --all
 ```
 
-`--incoming` follows callers. `--outgoing` follows callees. `--depth` controls hop count. Use `--page`, `--page-size`, or `--all` for larger graphs.
+Use workspace-relative file paths in targets. Write `src/orders.ts::charge`, not `/app/src/orders.ts::charge`. `--incoming` follows callers. `--outgoing` follows callees. `--depth` controls hop count. Use `--page`, `--page-size`, or `--all` for larger graphs.
+
+If `graph` says a target is ambiguous, choose the printed candidate that matches the symbol you need and retry with that exact candidate string. If it says no symbol target was found, re-check that the file path is workspace-relative and that the symbol name appears in prior output.
 """,
     }
     return textwrap.dedent(bodies[command]).strip()

@@ -59,6 +59,8 @@ def test_symnav_install_script_can_limit_to_paired_commands() -> None:
     assert "symnav context" not in skill
     assert "Other symnav commands" not in skill
     assert "only" not in skill
+    assert "Write `src/orders.ts::charge`, not `/app/src/orders.ts::charge`" in skill
+    assert "choose the printed candidate" in skill
 
 
 def test_toolchain_root_creates_claude_compat_links() -> None:
@@ -83,6 +85,8 @@ def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
     assert "installed globally" in codex_agents_md(symnav=True)
     assert "`symnav ...`" in codex_agents_md(symnav=True)
     assert "`symnav --cwd /app" not in codex_agents_md(symnav=True)
+    assert "not container paths like `/app/src/file.ts::name`" in codex_agents_md(symnav=True)
+    assert "choose one printed candidate" in codex_agents_md(symnav=True)
     assert "provides deterministic TypeScript orientation" in codex_agents_md(symnav=True)
     assert "Available symnav commands include overview, resolve, def, refs, context, and graph" in codex_agents_md(
         symnav=True
@@ -102,6 +106,8 @@ def test_codex_agents_md_can_describe_one_symnav_command() -> None:
     assert ".agents/skills/symnav-context/SKILL.md" in text
     assert "This command provides deterministic TypeScript symbol navigation" in text
     assert "Run it exactly as `symnav context ...`" in text
+    assert "not container paths like `/app/src/file.ts::name`" in text
+    assert "choose one printed candidate" in text
     assert "overview, resolve, def, refs, context, and graph" not in text
 
 
@@ -112,6 +118,8 @@ def test_codex_agents_md_can_describe_paired_symnav_commands() -> None:
     assert "`symnav overview` and `symnav refs` commands are installed globally" in text
     assert "Run them exactly as `symnav overview ...` or `symnav refs ...`" in text
     assert "These commands provide deterministic TypeScript symbol navigation" in text
+    assert "not container paths like `/app/src/file.ts::name`" in text
+    assert "choose one printed candidate" in text
     assert "symnav context" not in text
     assert "overview, resolve, def, refs, context, and graph" not in text
 

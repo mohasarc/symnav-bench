@@ -52,6 +52,7 @@ def _symnav_lines(symnav_skill_variant: SymnavSkillVariant) -> list[str]:
             "Available symnav commands include overview, resolve, def, refs, context, and graph.",
             "Normal reads, search, tests, and edits remain available whenever they help.",
             "Run overview only on a .ts or .tsx file, never on a directory; use resolve or rg --files first when you need to find the file.",
+            "For symbol targets, use workspace-relative paths like `src/file.ts::name`, not container paths like `/app/src/file.ts::name`; if symnav reports ambiguity, choose one printed candidate and retry with that exact target.",
         ]
     commands = symnav_variant_commands(symnav_skill_variant)
     commands_text = command_list_text(symnav_skill_variant)
@@ -65,6 +66,10 @@ def _symnav_lines(symnav_skill_variant: SymnavSkillVariant) -> list[str]:
     ]
     if "overview" in commands:
         lines.append("Run overview only on a .ts or .tsx file, never on a directory; use rg --files first when you need to find the file.")
+    if any(command in commands for command in ("def", "refs", "context", "graph")):
+        lines.append(
+            "For symbol targets, use workspace-relative paths like `src/file.ts::name`, not container paths like `/app/src/file.ts::name`; if symnav reports ambiguity, choose one printed candidate and retry with that exact target."
+        )
     return lines
 
 
