@@ -16,7 +16,8 @@ if (/\\b(rg|grep|find|cat|sed|head|awk)\\b/.test(text) && !/\\bsymnav\\b/.test(t
 def claude_directive() -> str:
     return "\n".join(
         [
-            "This environment can be slow. When running shell commands, use generous timeouts and continue polling long-running commands for several minutes before treating them as stuck.",
+            "Hard rule: this environment can be slow. For every shell command you run, ALWAYS wait at least 5 minutes before treating it as stuck because it produced no output.",
+            "Continue polling long-running commands until at least 5 minutes have elapsed; an early empty poll is not the final result.",
             "Always read .agents/skills/symnav/SKILL.md before starting any work. No exceptions; read the symnav skill first.",
             "The symnav command is installed globally. Run it exactly as `symnav ...` from any shell.",
             "The global `symnav ...` command provides deterministic TypeScript orientation and symbol navigation.",
@@ -31,8 +32,9 @@ def codex_agents_md(symnav: bool) -> str:
     lines = [
         "# Agent rules",
         "",
-        "This environment can be slow. When running shell commands, pass generous timeout_ms or yield_time_ms values.",
-        "Continue polling long-running commands for several minutes before treating them as stuck; an early empty poll is not the final result.",
+        "Hard rule: this environment can be slow. For every shell command you run, ALWAYS wait at least 5 minutes before treating it as stuck because it produced no output.",
+        "When a tool supports timeout_ms or yield_time_ms, pass at least 300000 for commands you run.",
+        "Continue polling long-running commands until at least 5 minutes have elapsed; an early empty poll is not the final result.",
     ]
     if symnav:
         lines.extend(

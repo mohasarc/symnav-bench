@@ -38,11 +38,15 @@ def test_toolchain_root_creates_claude_compat_links() -> None:
 
 def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
     assert "yield_time_ms" in codex_agents_md(symnav=False)
-    assert "several minutes" in codex_agents_md(symnav=False)
+    assert "Hard rule" in codex_agents_md(symnav=False)
+    assert "ALWAYS wait at least 5 minutes" in codex_agents_md(symnav=False)
+    assert "pass at least 300000" in codex_agents_md(symnav=False)
     assert "early empty poll is not the final result" in codex_agents_md(symnav=False)
     assert "symnav" not in codex_agents_md(symnav=False).lower()
     assert "yield_time_ms" in codex_agents_md(symnav=True)
-    assert "several minutes" in codex_agents_md(symnav=True)
+    assert "Hard rule" in codex_agents_md(symnav=True)
+    assert "ALWAYS wait at least 5 minutes" in codex_agents_md(symnav=True)
+    assert "pass at least 300000" in codex_agents_md(symnav=True)
     assert "No exceptions; read the symnav skill first" in codex_agents_md(symnav=True)
     assert "installed globally" in codex_agents_md(symnav=True)
     assert "`symnav ...`" in codex_agents_md(symnav=True)
