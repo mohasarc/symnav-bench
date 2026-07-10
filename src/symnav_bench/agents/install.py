@@ -162,6 +162,7 @@ def _wrap_binary_lines(binary: str) -> list[str]:
 def symnav_install_script(symnav_sha: str, *, codex: bool, skill_variant: SymnavSkillVariant = "all") -> str:
     escaped_sha = symnav_sha.replace("'", "")
     allowed_command = "" if skill_variant == "all" else skill_variant
+    skill_help_path = "" if skill_variant == "all" else f"/app/.agents/skills/symnav-{skill_variant}/SKILL.md"
     lines = [
         "set -eu",
         "mkdir -p /opt /app/bin /app/.git/info",
@@ -176,12 +177,23 @@ def symnav_install_script(symnav_sha: str, *, codex: bool, skill_variant: Symnav
         "cat > /app/bin/symnav <<'EOF'",
         "#!/bin/sh",
         f"allowed_command='{allowed_command}'",
+        f"skill_help_path='{skill_help_path}'",
         "if [ -n \"$allowed_command\" ]; then",
+        "  if [ \"$#\" -eq 0 ]; then",
+        "    cat \"$skill_help_path\"",
+        "    exit 0",
+        "  fi",
         "  for arg in \"$@\"; do",
+        "    case \"$arg\" in",
+        "      --help|-h|help)",
+        "        cat \"$skill_help_path\"",
+        "        exit 0",
+        "        ;;",
+        "    esac",
         "    case \"$arg\" in",
         "      overview|resolve|def|refs|context|graph|stats)",
         "        if [ \"$arg\" != \"$allowed_command\" ]; then",
-        "          echo \"This benchmark arm permits only: symnav $allowed_command\" >&2",
+        "          echo \"Unsupported symnav invocation for this benchmark arm.\" >&2",
         "          exit 2",
         "        fi",
         "        break",
@@ -214,8 +226,11 @@ def symnav_install_script(symnav_sha: str, *, codex: bool, skill_variant: Symnav
 def _write_skill_variant_lines(skill_variant: SymnavSkillVariant) -> list[str]:
     if skill_variant == "all":
         return []
+    skill_dir = f"/app/.agents/skills/symnav-{skill_variant}"
     return [
-        "cat > /app/.agents/skills/symnav/SKILL.md <<'EOF'",
+        "rm -rf /app/.agents/skills/symnav",
+        f"mkdir -p {skill_dir}",
+        f"cat > {skill_dir}/SKILL.md <<'EOF'",
         *symnav_skill_markdown(skill_variant).splitlines(),
         "EOF",
     ]
@@ -227,17 +242,17 @@ def symnav_skill_markdown(skill_variant: SymnavSkillVariant) -> str:
         textwrap.dedent(
             f"""\
             ---
-            name: symnav
-            description: Documents only `symnav {skill_variant}` for this benchmark arm. Use this skill when navigating TypeScript code in this run and you need the `{skill_variant}` command.
+            name: symnav-{skill_variant}
+            description: Use `symnav {skill_variant}` for deterministic TypeScript symbol navigation in this benchmark arm.
             ---
 
-            `symnav` is installed globally. In this benchmark arm, the skill documents only:
+            `symnav {skill_variant}` is installed globally.
 
             ```
             symnav {skill_variant} ...
             ```
 
-            Other symnav commands are intentionally outside this arm. Use normal reads, search, tests, and edits whenever they help.
+            Use normal reads, search, tests, and edits whenever they help.
 
             {body}
             """
