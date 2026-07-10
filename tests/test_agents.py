@@ -38,19 +38,27 @@ def test_toolchain_root_creates_claude_compat_links() -> None:
 
 def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
     assert "yield_time_ms" in codex_agents_md(symnav=False)
+    assert "several minutes" in codex_agents_md(symnav=False)
+    assert "early empty poll is not the final result" in codex_agents_md(symnav=False)
     assert "symnav" not in codex_agents_md(symnav=False).lower()
     assert "yield_time_ms" in codex_agents_md(symnav=True)
+    assert "several minutes" in codex_agents_md(symnav=True)
     assert "No exceptions; read the symnav skill first" in codex_agents_md(symnav=True)
-    assert "symnav overview <file> --depth 0" in codex_agents_md(symnav=True)
     assert "installed globally" in codex_agents_md(symnav=True)
     assert "`symnav ...`" in codex_agents_md(symnav=True)
     assert "`symnav --cwd /app" not in codex_agents_md(symnav=True)
-    assert "read/search/test/edit normally" in codex_agents_md(symnav=True)
+    assert "provides deterministic TypeScript orientation" in codex_agents_md(symnav=True)
+    assert "Available symnav commands include overview, resolve, def, refs, context, and graph" in codex_agents_md(
+        symnav=True
+    )
+    assert "Normal reads, search, tests, and edits remain available whenever they help" in codex_agents_md(
+        symnav=True
+    )
     assert "never on a directory" in codex_agents_md(symnav=True)
-    assert "Use refs" in codex_agents_md(symnav=True)
-    assert "continue exploring" in codex_agents_md(symnav=True)
-    assert "run symnav again" in codex_agents_md(symnav=True)
-    assert "increasing depth or changing direction" in codex_agents_md(symnav=True)
+    assert "continue exploring" not in codex_agents_md(symnav=True)
+    assert "run symnav again" not in codex_agents_md(symnav=True)
+    assert "increasing depth or changing direction" not in codex_agents_md(symnav=True)
+    assert "after orientation" not in codex_agents_md(symnav=True)
 
 
 def test_claude_settings_hook() -> None:
