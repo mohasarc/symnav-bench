@@ -14,6 +14,7 @@ from symnav_bench.agents.install import (
     workspace_capture_step,
 )
 from symnav_bench.agents.pier_compat import Codex
+from symnav_bench.run_spec import SymnavSkillVariant
 
 
 class StockCodex(Codex):
@@ -39,14 +40,14 @@ class StockCodex(Codex):
 
 
 class SymnavCodex(StockCodex):
-    def __init__(self, *, symnav_sha: str, **kwargs):
+    def __init__(self, *, symnav_sha: str, symnav_skill_variant: SymnavSkillVariant = "all", **kwargs):
         logs_dir = kwargs.get("logs_dir")
         self._symnav_bench_steps = (
             toolchain_root_step(),
-            append_text_step("/app/AGENTS.md", codex_agents_md(symnav=True)),
+            append_text_step("/app/AGENTS.md", codex_agents_md(symnav=True, symnav_skill_variant=symnav_skill_variant)),
             InstallStep(
                 "install symnav",
-                symnav_install_script(symnav_sha, codex=True),
+                symnav_install_script(symnav_sha, codex=True, skill_variant=symnav_skill_variant),
             ),
             workspace_capture_step(logs_dir, ("codex",)),
         )

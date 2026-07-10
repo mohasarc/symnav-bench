@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import base64
 import shlex
+import textwrap
 from dataclasses import dataclass
+
+from symnav_bench.run_spec import SymnavSkillVariant
 
 
 INSTALL_DOMAINS: tuple[str, ...] = (
@@ -156,8 +159,9 @@ def _wrap_binary_lines(binary: str) -> list[str]:
     ]
 
 
-def symnav_install_script(symnav_sha: str, *, codex: bool) -> str:
+def symnav_install_script(symnav_sha: str, *, codex: bool, skill_variant: SymnavSkillVariant = "all") -> str:
     escaped_sha = symnav_sha.replace("'", "")
+    allowed_command = "" if skill_variant == "all" else skill_variant
     lines = [
         "set -eu",
         "mkdir -p /opt /app/bin /app/.git/info",
@@ -168,8 +172,23 @@ def symnav_install_script(symnav_sha: str, *, codex: bool) -> str:
         "pnpm build",
         "rm -rf /app/.agents/skills/symnav",
         "cp -R /opt/symnav/.agents/skills/symnav /app/.agents/skills/symnav",
+        *_write_skill_variant_lines(skill_variant),
         "cat > /app/bin/symnav <<'EOF'",
         "#!/bin/sh",
+        f"allowed_command='{allowed_command}'",
+        "if [ -n \"$allowed_command\" ]; then",
+        "  for arg in \"$@\"; do",
+        "    case \"$arg\" in",
+        "      overview|resolve|def|refs|context|graph|stats)",
+        "        if [ \"$arg\" != \"$allowed_command\" ]; then",
+        "          echo \"This benchmark arm permits only: symnav $allowed_command\" >&2",
+        "          exit 2",
+        "        fi",
+        "        break",
+        "        ;;",
+        "    esac",
+        "  done",
+        "fi",
         "has_cwd=0",
         "for arg in \"$@\"; do",
         "  case \"$arg\" in",
@@ -190,3 +209,122 @@ def symnav_install_script(symnav_sha: str, *, codex: bool) -> str:
     if codex:
         lines.append("mkdir -p /app/.codex")
     return "\n".join(lines)
+
+
+def _write_skill_variant_lines(skill_variant: SymnavSkillVariant) -> list[str]:
+    if skill_variant == "all":
+        return []
+    return [
+        "cat > /app/.agents/skills/symnav/SKILL.md <<'EOF'",
+        *symnav_skill_markdown(skill_variant).splitlines(),
+        "EOF",
+    ]
+
+
+def symnav_skill_markdown(skill_variant: SymnavSkillVariant) -> str:
+    body = _variant_body(skill_variant)
+    return (
+        textwrap.dedent(
+            f"""\
+            ---
+            name: symnav
+            description: Documents only `symnav {skill_variant}` for this benchmark arm. Use this skill when navigating TypeScript code in this run and you need the `{skill_variant}` command.
+            ---
+
+            `symnav` is installed globally. In this benchmark arm, the skill documents only:
+
+            ```
+            symnav {skill_variant} ...
+            ```
+
+            Other symnav commands are intentionally outside this arm. Use normal reads, search, tests, and edits whenever they help.
+
+            {body}
+            """
+        ).strip()
+        + "\n"
+    )
+
+
+def _variant_body(skill_variant: SymnavSkillVariant) -> str:
+    bodies: dict[SymnavSkillVariant, str] = {
+        "overview": """\
+## `overview`
+
+`overview` prints a symbol and fold tree for one TypeScript source file.
+
+```
+$ symnav overview src/file.ts --depth 0
+$ symnav overview src/file.ts --depth 1
+$ symnav overview src/file.ts --depth 2
+$ symnav overview src/file.ts --at 'class Example' --depth 2
+```
+
+Use a `.ts` or `.tsx` file path, not a directory. `--depth` controls nesting. `--at <text>` selects a matching symbol, class, function, test block, or fold header from the overview output.
+""",
+        "resolve": """\
+## `resolve`
+
+`resolve` lists symbols and files whose names match a query.
+
+```
+$ symnav resolve 'queryClient'
+$ symnav resolve 'QueryObserver'
+$ symnav resolve --regex 'create.*Persister'
+```
+
+Pass one query per command. Use `--regex` for JavaScript regular expression matching. The output lists candidates; copy a precise candidate when you need to refer to a specific symbol elsewhere in normal code inspection.
+""",
+        "def": """\
+## `def`
+
+`def` prints the declaration location and signature for a unique symbol target.
+
+```
+$ symnav def charge
+$ symnav def orders.ts::charge
+$ symnav def src/orders.ts::PaymentProcessor::charge
+```
+
+Targets are suffix patterns. A short name works when it is unique. If the target is ambiguous, `def` prints candidates; copy a more specific candidate from that output. Quote targets that contain shell-sensitive characters.
+""",
+        "refs": """\
+## `refs`
+
+`refs` lists workspace references to a unique symbol target, grouped by file.
+
+```
+$ symnav refs src/orders.ts::charge
+$ symnav refs src/orders.ts::charge --all
+$ symnav refs src/orders.ts::charge --page 2 --page-size 50
+```
+
+Targets are suffix patterns. Use `--all` for one complete listing, or page through large result sets. `--full-lines` prints untrimmed source previews.
+""",
+        "context": """\
+## `context`
+
+`context` prints one block around a symbol: definition, direct callers, direct callees, reference summary, and recent git history.
+
+```
+$ symnav context src/orders.ts::charge
+$ symnav context src/orders.ts::PaymentProcessor::charge
+```
+
+Targets are suffix patterns and must identify one workspace symbol. `context` reports direct statically resolved callers and callees in workspace files. If a target is ambiguous, copy one of the printed candidates and run the command again.
+""",
+        "graph": """\
+## `graph`
+
+`graph` prints multi-hop incoming or outgoing call paths around a unique symbol target.
+
+```
+$ symnav graph src/orders.ts::charge --incoming --depth 2
+$ symnav graph src/orders.ts::charge --outgoing --depth 3
+$ symnav graph src/orders.ts::charge --incoming --depth 2 --all
+```
+
+`--incoming` follows callers. `--outgoing` follows callees. `--depth` controls hop count. Use `--page`, `--page-size`, or `--all` for larger graphs.
+""",
+    }
+    return textwrap.dedent(bodies[skill_variant]).strip()

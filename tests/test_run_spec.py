@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from symnav_bench.cell_identity import CellIdentity
-from symnav_bench.run_spec import AgentSpec, Condition
+from symnav_bench.run_spec import AgentSpec, Condition, parse_conditions
 
 
 def test_agent_spec_parse() -> None:
@@ -25,3 +25,15 @@ def test_condition_label_and_cell_dirname() -> None:
         CellIdentity(spec, condition.label, "ts-pattern-match-each", 0).dirname()
         == "codex-gpt-5.4-xhigh-symnav@abc123def456-ts-pattern-match-each-rep0"
     )
+
+
+def test_command_specific_condition_label_and_alias() -> None:
+    sha = "abc123def4569999999999999999999999999999"
+    conditions = parse_conditions("stock,symnav-overview,symnav-ref", sha)
+    assert conditions == [
+        Condition("stock"),
+        Condition("symnav", sha, "overview"),
+        Condition("symnav", sha, "refs"),
+    ]
+    assert conditions[1].label == "symnav-overview@abc123def456"
+    assert conditions[2].label == "symnav-refs@abc123def456"

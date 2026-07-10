@@ -26,6 +26,7 @@ def _agent_block(spec: AgentSpec, condition: Condition) -> dict[str, object]:
             spec,
             {"import_path": "symnav_bench.agents.claude:SymnavClaudeCode"},
             symnav_sha=condition.symnav_sha,
+            symnav_skill_variant=condition.symnav_skill_variant,
         )
     if condition.kind == "stock":
         return _agent_config(
@@ -36,6 +37,7 @@ def _agent_block(spec: AgentSpec, condition: Condition) -> dict[str, object]:
         spec,
         {"import_path": "symnav_bench.agents.codex:SymnavCodex"},
         symnav_sha=condition.symnav_sha,
+        symnav_skill_variant=condition.symnav_skill_variant,
     )
 
 
@@ -43,10 +45,13 @@ def _agent_config(
     spec: AgentSpec,
     base: dict[str, object],
     symnav_sha: str | None = None,
+    symnav_skill_variant: str = "all",
 ) -> dict[str, object]:
     kwargs = {"reasoning_effort": spec.effort}
     if symnav_sha is not None:
         kwargs["symnav_sha"] = symnav_sha
+    if symnav_skill_variant != "all":
+        kwargs["symnav_skill_variant"] = symnav_skill_variant
     config: dict[str, object] = {**base, "model_name": spec.model, "kwargs": kwargs}
     if spec.agent == "codex":
         config["env"] = {"CODEX_FORCE_AUTH_JSON": "true"}

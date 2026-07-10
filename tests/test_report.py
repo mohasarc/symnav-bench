@@ -5,7 +5,7 @@ import json
 from symnav_bench.cell_identity import CellIdentity
 from symnav_bench.cells.cell import Cell
 from symnav_bench.report.cell_set import ArmKey, CellSet
-from symnav_bench.report.comparison import compare
+from symnav_bench.report.comparison import compare, planned_comparisons
 from symnav_bench.report.render import write_report
 from symnav_bench.run_spec import AgentSpec
 
@@ -48,6 +48,18 @@ def test_compare_uses_matched_solved_set() -> None:
     assert result.efficiency.left_cost == 2
     assert result.efficiency.right_steps == 5
     assert result.holes == ["missing arm for b"]
+
+
+def test_planned_comparisons_include_command_specific_symnav_arms() -> None:
+    cells = CellSet(
+        [
+            _cell("stock", "a", False),
+            _cell("symnav-overview@abc", "a", True),
+            _cell("symnav-context@abc", "a", True),
+        ]
+    )
+    labels = [comparison.right.condition_label for comparison in planned_comparisons(cells)]
+    assert labels == ["symnav-overview@abc", "symnav-context@abc"]
 
 
 def test_report_writes_markdown_csvs_and_charts(tmp_path) -> None:

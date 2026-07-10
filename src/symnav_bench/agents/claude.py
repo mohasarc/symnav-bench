@@ -3,7 +3,7 @@ from __future__ import annotations
 from pier.models.agent.install import InstallStep as PierInstallStep
 from pier.models.agent.network import NetworkAllowlist
 
-from symnav_bench.agents.directives import NUDGE_JS, claude_directive, claude_settings_json
+from symnav_bench.agents.directives import claude_directive, claude_settings_json, nudge_js
 from symnav_bench.agents.install import (
     INSTALL_DOMAINS,
     InstallStep,
@@ -14,20 +14,25 @@ from symnav_bench.agents.install import (
     write_text_step,
 )
 from symnav_bench.agents.pier_compat import ClaudeCode
+from symnav_bench.run_spec import SymnavSkillVariant
 
 
 class SymnavClaudeCode(ClaudeCode):
-    def __init__(self, *, symnav_sha: str, **kwargs):
+    def __init__(self, *, symnav_sha: str, symnav_skill_variant: SymnavSkillVariant = "all", **kwargs):
         logs_dir = kwargs.get("logs_dir")
         self._symnav_bench_steps = (
             toolchain_root_step(),
-            append_text_step("/app/AGENTS.md", claude_directive()),
-            append_text_step("/app/CLAUDE.md", claude_directive(), unless_same_file_as="/app/AGENTS.md"),
+            append_text_step("/app/AGENTS.md", claude_directive(symnav_skill_variant)),
+            append_text_step(
+                "/app/CLAUDE.md",
+                claude_directive(symnav_skill_variant),
+                unless_same_file_as="/app/AGENTS.md",
+            ),
             write_text_step("/app/.claude/settings.json", claude_settings_json()),
-            write_text_step("/tmp/symnav-bench/symnav-nudge.js", NUDGE_JS),
+            write_text_step("/tmp/symnav-bench/symnav-nudge.js", nudge_js(symnav_skill_variant)),
             InstallStep(
                 "install symnav",
-                symnav_install_script(symnav_sha, codex=False),
+                symnav_install_script(symnav_sha, codex=False, skill_variant=symnav_skill_variant),
             ),
             workspace_capture_step(logs_dir, ("claude", "claude-code")),
         )

@@ -71,6 +71,22 @@ def test_job_config_names_agent_arm(tmp_path) -> None:
     assert config["tasks"] == [{"path": str(tmp_path / "task")}]
 
 
+def test_job_config_threads_symnav_skill_variant(tmp_path) -> None:
+    config = yaml.safe_load(
+        build_job_yaml(
+            AgentSpec("codex", "m", "e"),
+            Condition("symnav", "c" * 40, "overview"),
+            "task",
+            tmp_path,
+        )
+    )
+    assert config["agents"][0]["kwargs"] == {
+        "reasoning_effort": "e",
+        "symnav_sha": "c" * 40,
+        "symnav_skill_variant": "overview",
+    }
+
+
 def test_runner_continues_after_error(tmp_path) -> None:
     config = RunConfig(
         specs=[AgentSpec("codex", "m", "e")],

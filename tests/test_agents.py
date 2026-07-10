@@ -7,6 +7,7 @@ from symnav_bench.agents.install import (
     CODEX_AUTH_DOMAINS,
     INSTALL_DOMAINS,
     append_text_step,
+    symnav_skill_markdown,
     symnav_install_script,
     toolchain_root_step,
     workspace_capture_step,
@@ -27,6 +28,16 @@ def test_symnav_install_script_pins_sha_and_builds() -> None:
     assert "ln -sf /app/bin/symnav /usr/local/bin/symnav" in script
     assert "symnav --help >/dev/null" in script
     assert "/app/bin/symnav /opt/symnav /app/.agents" not in script
+
+
+def test_symnav_install_script_can_limit_to_one_command() -> None:
+    script = symnav_install_script("a" * 40, codex=True, skill_variant="overview")
+    assert "allowed_command='overview'" in script
+    assert "This benchmark arm permits only: symnav $allowed_command" in script
+    assert "symnav overview ..." in script
+    assert "symnav refs" not in symnav_skill_markdown("overview")
+    assert "Symbol/fold tree" not in symnav_skill_markdown("overview")
+    assert "`overview` prints a symbol and fold tree" in symnav_skill_markdown("overview")
 
 
 def test_toolchain_root_creates_claude_compat_links() -> None:
@@ -63,6 +74,13 @@ def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
     assert "run symnav again" not in codex_agents_md(symnav=True)
     assert "increasing depth or changing direction" not in codex_agents_md(symnav=True)
     assert "after orientation" not in codex_agents_md(symnav=True)
+
+
+def test_codex_agents_md_can_describe_one_symnav_command() -> None:
+    text = codex_agents_md(symnav=True, symnav_skill_variant="context")
+    assert "only the `symnav context` command" in text
+    assert "use `symnav context ...`" in text
+    assert "overview, resolve, def, refs, context, and graph" not in text
 
 
 def test_claude_settings_hook() -> None:

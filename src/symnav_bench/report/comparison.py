@@ -52,7 +52,7 @@ def planned_comparisons(cells: CellSet, compare_labels: list[str] | None = None)
                     comparisons.append(compare(cells, left, right))
         return comparisons
     for stock in [key for key in arms if key.condition_label == "stock"]:
-        for symnav in [key for key in arms if key.condition_label.startswith("symnav@") and _same_agent(stock, key)]:
+        for symnav in [key for key in arms if _is_symnav_arm(key.condition_label) and _same_agent(stock, key)]:
             comparisons.append(compare(cells, stock, symnav))
     return comparisons
 
@@ -79,6 +79,10 @@ def compare(cells: CellSet, left: ArmKey, right: ArmKey) -> ArmComparison:
 
 def _same_agent(left: ArmKey, right: ArmKey) -> bool:
     return (left.agent, left.model, left.effort) == (right.agent, right.model, right.effort)
+
+
+def _is_symnav_arm(condition_label: str) -> bool:
+    return condition_label == "symnav" or condition_label.startswith("symnav@") or condition_label.startswith("symnav-")
 
 
 def _matched_tasks(left: list[Cell], right: list[Cell]) -> list[str]:
