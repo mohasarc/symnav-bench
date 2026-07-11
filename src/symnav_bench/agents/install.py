@@ -122,6 +122,32 @@ def codex_integration_steps(bundle: AgentIntegrationBundle, *, treatment: bool) 
     return tuple(steps)
 
 
+def claude_integration_steps(bundle: AgentIntegrationBundle, *, treatment: bool) -> tuple[InstallStep, ...]:
+    steps = [
+        append_integration_file_step(bundle.shared_rules),
+        append_integration_file_step(
+            bundle.shared_rules,
+            destination="/app/CLAUDE.md",
+            unless_same_file_as="/app/AGENTS.md",
+        ),
+    ]
+    if treatment:
+        steps.extend(
+            [
+                append_integration_file_step(bundle.rules),
+                append_integration_file_step(
+                    bundle.rules,
+                    destination="/app/CLAUDE.md",
+                    unless_same_file_as="/app/AGENTS.md",
+                ),
+                *(write_integration_file_step(file) for file in bundle.skill_files),
+                write_integration_file_step(bundle.claude_settings),
+                write_integration_file_step(bundle.claude_hook),
+            ]
+        )
+    return tuple(steps)
+
+
 def symnav_command_wrapper(allowed_commands: tuple[str, ...], upstream: str) -> str:
     allowed = " ".join(allowed_commands)
     return "\n".join(
