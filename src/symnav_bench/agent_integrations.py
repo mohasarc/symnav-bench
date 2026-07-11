@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import base64
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import Any, Mapping, cast
 
 from symnav_bench.run_spec import SYMNAV_COMMANDS, SymnavCommand
 
@@ -30,6 +31,67 @@ class AgentIntegrationBundle:
     claude_settings: IntegrationFile
     claude_hook: IntegrationFile
     content_hash: str
+
+    def job_payload(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "content_hash": self.content_hash,
+            "allowed_commands": list(self.allowed_commands),
+            "shared_rules": _job_file_payload(self.shared_rules),
+            "skill_files": [_job_file_payload(file) for file in self.skill_files],
+            "rules": _job_file_payload(self.rules),
+            "claude_settings": _job_file_payload(self.claude_settings),
+            "claude_hook": _job_file_payload(self.claude_hook),
+        }
+
+
+@dataclass(frozen=True)
+class RuntimeIntegrationFile:
+    destination: PurePosixPath
+    sha256: str
+    content: bytes
+
+
+@dataclass(frozen=True)
+class RuntimeAgentIntegrationBundle:
+    id: str
+    shared_rules: RuntimeIntegrationFile
+    skill_files: tuple[RuntimeIntegrationFile, ...]
+    rules: RuntimeIntegrationFile
+    allowed_commands: tuple[SymnavCommand, ...]
+    claude_settings: RuntimeIntegrationFile
+    claude_hook: RuntimeIntegrationFile
+    content_hash: str
+
+
+def runtime_integration_bundle(
+    value: AgentIntegrationBundle | Mapping[str, Any],
+) -> RuntimeAgentIntegrationBundle:
+    if isinstance(value, AgentIntegrationBundle):
+        return RuntimeAgentIntegrationBundle(
+            id=value.id,
+            shared_rules=_runtime_file(value.shared_rules),
+            skill_files=tuple(_runtime_file(file) for file in value.skill_files),
+            rules=_runtime_file(value.rules),
+            allowed_commands=value.allowed_commands,
+            claude_settings=_runtime_file(value.claude_settings),
+            claude_hook=_runtime_file(value.claude_hook),
+            content_hash=value.content_hash,
+        )
+    bundle_id = _payload_string(value, "id")
+    raw_commands = value.get("allowed_commands")
+    if not isinstance(raw_commands, list) or not all(command in SYMNAV_COMMANDS for command in raw_commands):
+        raise ValueError("invalid runtime integration commands")
+    return RuntimeAgentIntegrationBundle(
+        id=bundle_id,
+        shared_rules=_runtime_payload_file(value.get("shared_rules")),
+        skill_files=tuple(_runtime_payload_file(file) for file in _payload_list(value, "skill_files")),
+        rules=_runtime_payload_file(value.get("rules")),
+        allowed_commands=cast(tuple[SymnavCommand, ...], tuple(raw_commands)),
+        claude_settings=_runtime_payload_file(value.get("claude_settings")),
+        claude_hook=_runtime_payload_file(value.get("claude_hook")),
+        content_hash=_payload_string(value, "content_hash"),
+    )
 
 
 class SymnavIntegrationCatalog:
@@ -193,3 +255,49 @@ def _content_hash(checkout: Path, paths: list[Path]) -> str:
         digest.update(len(content).to_bytes(8, "big"))
         digest.update(content)
     return digest.hexdigest()
+
+
+def _job_file_payload(integration_file: IntegrationFile) -> dict[str, str]:
+    return {
+        "destination": integration_file.destination.as_posix(),
+        "sha256": integration_file.sha256,
+        "content_base64": base64.b64encode(integration_file.source.read_bytes()).decode("ascii"),
+    }
+
+
+def _runtime_file(integration_file: IntegrationFile) -> RuntimeIntegrationFile:
+    return RuntimeIntegrationFile(
+        destination=integration_file.destination,
+        sha256=integration_file.sha256,
+        content=integration_file.source.read_bytes(),
+    )
+
+
+def _runtime_payload_file(value: object) -> RuntimeIntegrationFile:
+    if not isinstance(value, Mapping):
+        raise ValueError("invalid runtime integration file")
+    destination = _payload_string(value, "destination")
+    expected_sha256 = _payload_string(value, "sha256")
+    encoded = _payload_string(value, "content_base64")
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except ValueError as error:
+        raise ValueError("invalid runtime integration file encoding") from error
+    actual_sha256 = hashlib.sha256(content).hexdigest()
+    if actual_sha256 != expected_sha256:
+        raise ValueError("runtime integration file hash mismatch")
+    return RuntimeIntegrationFile(PurePosixPath(destination), expected_sha256, content)
+
+
+def _payload_string(mapping: Mapping[str, Any], key: str) -> str:
+    value = mapping.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"invalid runtime integration field {key!r}")
+    return value
+
+
+def _payload_list(mapping: Mapping[str, Any], key: str) -> list[Any]:
+    value = mapping.get(key)
+    if not isinstance(value, list):
+        raise ValueError(f"invalid runtime integration field {key!r}")
+    return value

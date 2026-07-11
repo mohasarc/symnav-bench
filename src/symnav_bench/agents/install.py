@@ -5,7 +5,7 @@ import hashlib
 import shlex
 from dataclasses import dataclass
 
-from symnav_bench.agent_integrations import AgentIntegrationBundle, IntegrationFile
+from symnav_bench.agent_integrations import RuntimeAgentIntegrationBundle, RuntimeIntegrationFile
 
 
 INSTALL_DOMAINS: tuple[str, ...] = (
@@ -89,30 +89,30 @@ def append_text_step(path: str, text: str, *, unless_same_file_as: str | None = 
 
 
 def append_integration_file_step(
-    integration_file: IntegrationFile,
+    integration_file: RuntimeIntegrationFile,
     *,
     destination: str | None = None,
     unless_same_file_as: str | None = None,
 ) -> InstallStep:
     return append_text_step(
         destination or integration_file.destination.as_posix(),
-        integration_file.source.read_text(encoding="utf-8"),
+        integration_file.content.decode("utf-8"),
         unless_same_file_as=unless_same_file_as,
     )
 
 
 def write_integration_file_step(
-    integration_file: IntegrationFile,
+    integration_file: RuntimeIntegrationFile,
     *,
     destination: str | None = None,
 ) -> InstallStep:
     return write_text_step(
         destination or integration_file.destination.as_posix(),
-        integration_file.source.read_text(encoding="utf-8"),
+        integration_file.content.decode("utf-8"),
     )
 
 
-def codex_integration_steps(bundle: AgentIntegrationBundle, *, treatment: bool) -> tuple[InstallStep, ...]:
+def codex_integration_steps(bundle: RuntimeAgentIntegrationBundle, *, treatment: bool) -> tuple[InstallStep, ...]:
     steps = [append_integration_file_step(bundle.shared_rules)]
     if treatment:
         steps.append(append_integration_file_step(bundle.rules))
@@ -120,7 +120,7 @@ def codex_integration_steps(bundle: AgentIntegrationBundle, *, treatment: bool) 
     return tuple(steps)
 
 
-def claude_integration_steps(bundle: AgentIntegrationBundle, *, treatment: bool) -> tuple[InstallStep, ...]:
+def claude_integration_steps(bundle: RuntimeAgentIntegrationBundle, *, treatment: bool) -> tuple[InstallStep, ...]:
     steps = [
         append_integration_file_step(bundle.shared_rules),
         append_integration_file_step(

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from typing import Any, Mapping
+
 from pier.models.agent.install import InstallStep as PierInstallStep
 from pier.models.agent.network import NetworkAllowlist
 
-from symnav_bench.agent_integrations import AgentIntegrationBundle
+from symnav_bench.agent_integrations import AgentIntegrationBundle, runtime_integration_bundle
 from symnav_bench.agents.install import (
     CODEX_AUTH_DOMAINS,
     INSTALL_DOMAINS,
@@ -17,11 +19,12 @@ from symnav_bench.agents.pier_compat import Codex
 
 
 class StockCodex(Codex):
-    def __init__(self, *, integration_bundle: AgentIntegrationBundle, **kwargs):
+    def __init__(self, *, integration_bundle: AgentIntegrationBundle | Mapping[str, Any], **kwargs):
         logs_dir = kwargs.get("logs_dir")
+        bundle = runtime_integration_bundle(integration_bundle)
         self._symnav_bench_steps = (
             toolchain_root_step(),
-            *codex_integration_steps(integration_bundle, treatment=False),
+            *codex_integration_steps(bundle, treatment=False),
             workspace_capture_step(logs_dir, ("codex",)),
         )
         super().__init__(**kwargs)
@@ -43,19 +46,20 @@ class SymnavCodex(StockCodex):
         self,
         *,
         symnav_sha: str,
-        integration_bundle: AgentIntegrationBundle,
+        integration_bundle: AgentIntegrationBundle | Mapping[str, Any],
         **kwargs,
     ):
         logs_dir = kwargs.get("logs_dir")
+        bundle = runtime_integration_bundle(integration_bundle)
         self._symnav_bench_steps = (
             toolchain_root_step(),
-            *codex_integration_steps(integration_bundle, treatment=True),
+            *codex_integration_steps(bundle, treatment=True),
             InstallStep(
                 "install symnav",
                 pinned_symnav_install_script(
                     symnav_sha,
                     codex=True,
-                    allowed_commands=integration_bundle.allowed_commands,
+                    allowed_commands=bundle.allowed_commands,
                 ),
             ),
             workspace_capture_step(logs_dir, ("codex",)),
