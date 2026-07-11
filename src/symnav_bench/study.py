@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
+
+import yaml
 
 from symnav_bench.run_spec import AgentSpec
 
@@ -24,6 +29,22 @@ ConditionName = Literal[
     "resolve-graph",
 ]
 SymnavRevisionKind = Literal["main", "pull_request"]
+CONDITION_NAMES: tuple[ConditionName, ...] = (
+    "stock",
+    "symnav",
+    "overview",
+    "resolve",
+    "def",
+    "refs",
+    "context",
+    "graph",
+    "overview-refs",
+    "overview-context",
+    "overview-def",
+    "overview-graph",
+    "resolve-graph",
+)
+GIT_SHA = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
 
 
 @dataclass(frozen=True)
@@ -64,7 +85,172 @@ class StudyManifest:
 
     @classmethod
     def load(cls, path: Path) -> StudyManifest:
-        raise NotImplementedError
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        manifest_data = require_mapping(raw, "study")
+        protocol_data = require_mapping(manifest_data.get("protocol"), "protocol")
+        expected_fingerprint = require_string(
+            manifest_data.get("protocol_fingerprint"), "protocol_fingerprint"
+        )
+        actual_fingerprint = fingerprint_mapping(protocol_data)
+        if expected_fingerprint != actual_fingerprint:
+            raise ValueError(
+                "protocol fingerprint does not match immutable study protocol: "
+                f"expected {expected_fingerprint}, got {actual_fingerprint}"
+            )
+        protocol = parse_protocol(protocol_data)
+        configuration_values = require_list(
+            manifest_data.get("configurations"), "configurations"
+        )
+        configurations = tuple(
+            parse_configuration(require_mapping(value, "configuration"))
+            for value in configuration_values
+        )
+        configuration_ids = [configuration.id for configuration in configurations]
+        if len(configuration_ids) != len(set(configuration_ids)):
+            raise ValueError("configuration ids must be unique")
+        return cls(
+            schema_version=require_integer(manifest_data.get("schema_version"), "schema_version"),
+            id=require_string(manifest_data.get("id"), "id"),
+            protocol=protocol,
+            configurations=configurations,
+        )
 
     def protocol_fingerprint(self) -> str:
-        raise NotImplementedError
+        return fingerprint_mapping(protocol_mapping(self.protocol))
+
+
+def parse_protocol(data: dict[str, Any]) -> StudyProtocol:
+    symnav_data = require_mapping(data.get("symnav"), "protocol.symnav")
+    kind = require_string(symnav_data.get("kind"), "protocol.symnav.kind")
+    if kind not in ("main", "pull_request"):
+        raise ValueError(f"unknown symnav revision kind {kind!r}")
+    deep_swe_sha = require_git_sha(data.get("deep_swe_sha"), "protocol.deep_swe_sha")
+    symnav_sha = require_git_sha(symnav_data.get("sha"), "protocol.symnav.sha")
+    base_sha = require_git_sha(symnav_data.get("base_sha"), "protocol.symnav.base_sha")
+    condition_values = require_list(data.get("conditions"), "protocol.conditions")
+    conditions: list[ConditionName] = []
+    for value in condition_values:
+        condition = require_string(value, "protocol.conditions entry")
+        if condition not in CONDITION_NAMES:
+            raise ValueError(f"unknown study condition {condition!r}")
+        conditions.append(cast(ConditionName, condition))
+    if len(conditions) != len(set(conditions)):
+        raise ValueError("study conditions must be unique")
+    repetitions = require_positive_integer(data.get("repetitions"), "protocol.repetitions")
+    wall_clock_seconds = require_positive_integer(
+        data.get("wall_clock_seconds"), "protocol.wall_clock_seconds"
+    )
+    pull_request_value = symnav_data.get("pull_request")
+    pull_request = (
+        None
+        if pull_request_value is None
+        else require_positive_integer(pull_request_value, "protocol.symnav.pull_request")
+    )
+    if kind == "pull_request" and pull_request is None:
+        raise ValueError("pull_request symnav revision requires pull_request")
+    if kind == "main" and pull_request is not None:
+        raise ValueError("main symnav revision cannot carry pull_request")
+    return StudyProtocol(
+        deep_swe_sha=deep_swe_sha,
+        symnav=SymnavRevision(
+            sha=symnav_sha,
+            kind=cast(SymnavRevisionKind, kind),
+            evaluation_sequence=require_positive_integer(
+                symnav_data.get("evaluation_sequence"),
+                "protocol.symnav.evaluation_sequence",
+            ),
+            base_ref=require_string(symnav_data.get("base_ref"), "protocol.symnav.base_ref"),
+            base_sha=base_sha,
+            pull_request=pull_request,
+        ),
+        repetitions=repetitions,
+        wall_clock_seconds=wall_clock_seconds,
+        randomization_seed=require_integer(
+            data.get("randomization_seed"), "protocol.randomization_seed"
+        ),
+        conditions=tuple(conditions),
+        scoring_policy=require_string(data.get("scoring_policy"), "protocol.scoring_policy"),
+        practical_uplift_points=require_number(
+            data.get("practical_uplift_points"), "protocol.practical_uplift_points"
+        ),
+    )
+
+
+def parse_configuration(data: dict[str, Any]) -> AgentConfiguration:
+    agent = require_string(data.get("agent"), "configuration.agent")
+    model = require_string(data.get("model"), "configuration.model")
+    effort = require_string(data.get("effort"), "configuration.effort")
+    return AgentConfiguration(
+        id=require_string(data.get("id"), "configuration.id"),
+        spec=AgentSpec.parse(f"{agent}:{model}:{effort}"),
+        agent_version=require_string(data.get("agent_version"), "configuration.agent_version"),
+    )
+
+
+def protocol_mapping(protocol: StudyProtocol) -> dict[str, Any]:
+    return {
+        "deep_swe_sha": protocol.deep_swe_sha,
+        "symnav": {
+            "sha": protocol.symnav.sha,
+            "kind": protocol.symnav.kind,
+            "evaluation_sequence": protocol.symnav.evaluation_sequence,
+            "base_ref": protocol.symnav.base_ref,
+            "base_sha": protocol.symnav.base_sha,
+            "pull_request": protocol.symnav.pull_request,
+        },
+        "repetitions": protocol.repetitions,
+        "wall_clock_seconds": protocol.wall_clock_seconds,
+        "randomization_seed": protocol.randomization_seed,
+        "conditions": list(protocol.conditions),
+        "scoring_policy": protocol.scoring_policy,
+        "practical_uplift_points": protocol.practical_uplift_points,
+    }
+
+
+def fingerprint_mapping(value: dict[str, Any]) -> str:
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def require_mapping(value: object, name: str) -> dict[str, Any]:
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise ValueError(f"{name} must be a mapping")
+    return cast(dict[str, Any], value)
+
+
+def require_list(value: object, name: str) -> list[Any]:
+    if not isinstance(value, list):
+        raise ValueError(f"{name} must be a list")
+    return value
+
+
+def require_string(value: object, name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} must be a non-empty string")
+    return value
+
+
+def require_integer(value: object, name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    return value
+
+
+def require_positive_integer(value: object, name: str) -> int:
+    integer = require_integer(value, name)
+    if integer <= 0:
+        raise ValueError(f"{name} must be positive")
+    return integer
+
+
+def require_number(value: object, name: str) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"{name} must be a number")
+    return float(value)
+
+
+def require_git_sha(value: object, name: str) -> str:
+    sha = require_string(value, name)
+    if not GIT_SHA.fullmatch(sha):
+        raise ValueError(f"{name} must be an immutable git sha")
+    return sha
