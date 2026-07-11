@@ -4,17 +4,21 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import yaml
+from pathlib import PurePosixPath
 
+from symnav_bench.agent_integrations import AgentIntegrationBundle, IntegrationFile
 from symnav_bench.run.auth import validate_auth
 from symnav_bench.cli import run_exit_code
 from symnav_bench.cell_identity import CellIdentity
 from symnav_bench.cells.cell import Cell
 from symnav_bench.run.config import RunConfig
-from symnav_bench.run.job_config import build_job_yaml
+from symnav_bench.run.job_config import HarnessIdentity, build_job_yaml
 from symnav_bench.run.limits import next_backoff, parse_limit_reset
 from symnav_bench.run.runner import CellRunner, build_pier_run_command, find_trial_dir
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, Condition
+from symnav_bench.study import AgentConfiguration
+from symnav_bench.suite import TaskManifestEntry
 
 
 def test_matrix_expansion(tmp_path) -> None:
@@ -84,6 +88,78 @@ def test_job_config_threads_symnav_skill_variant(tmp_path) -> None:
         "reasoning_effort": "e",
         "symnav_sha": "c" * 40,
         "symnav_skill_variant": "overview",
+    }
+
+
+def test_job_config_pins_agent_timeout_bundle_and_task_identity(tmp_path) -> None:
+    bundle = _integration_bundle(tmp_path)
+    configuration = AgentConfiguration(
+        id="codex-terra-medium",
+        spec=AgentSpec("codex", "gpt-5.6-terra", "medium"),
+        agent_version="0.31.0",
+    )
+    task = TaskManifestEntry("task", "typescript", "f" * 64)
+
+    config = yaml.safe_load(
+        build_job_yaml(
+            configuration,
+            Condition("symnav", "c" * 40),
+            task,
+            tmp_path,
+            bundle,
+            9_000,
+        )
+    )
+
+    assert config["agents"][0]["override_timeout_sec"] == 9_000
+    assert config["agents"][0]["kwargs"]["version"] == "0.31.0"
+    assert config["agents"][0]["kwargs"]["symnav_sha"] == "c" * 40
+    assert config["agents"][0]["kwargs"]["integration_bundle"]["id"] == "full"
+    assert config["symnav_bench"] == {
+        "agent": "codex",
+        "agent_version": "0.31.0",
+        "bundle_hash": "bundle-hash",
+        "bundle_id": "full",
+        "effort": "medium",
+        "model": "gpt-5.6-terra",
+        "symnav_sha": "c" * 40,
+        "task_checksum": "f" * 64,
+    }
+
+
+def test_harness_identity_serializes_every_pinned_runtime_input() -> None:
+    identity = HarnessIdentity(
+        image_reference="ghcr.io/mohasarc/symnav-bench@sha256:image",
+        image_digest="sha256:image",
+        symnav_bench_sha="a" * 40,
+        pier_version="0.3.0",
+        deep_swe_sha="b" * 40,
+        symnav_sha="c" * 40,
+        agent_name="codex",
+        agent_version="0.31.0",
+        bundle_id="full",
+        bundle_hash="d" * 64,
+        task_checksum="e" * 64,
+        prompt_rule_hash="f" * 64,
+        requested_model="gpt-5.6-terra",
+        requested_effort="medium",
+    )
+
+    assert identity.to_json() == {
+        "image_reference": "ghcr.io/mohasarc/symnav-bench@sha256:image",
+        "image_digest": "sha256:image",
+        "symnav_bench_sha": "a" * 40,
+        "pier_version": "0.3.0",
+        "deep_swe_sha": "b" * 40,
+        "symnav_sha": "c" * 40,
+        "agent_name": "codex",
+        "agent_version": "0.31.0",
+        "bundle_id": "full",
+        "bundle_hash": "d" * 64,
+        "task_checksum": "e" * 64,
+        "prompt_rule_hash": "f" * 64,
+        "requested_model": "gpt-5.6-terra",
+        "requested_effort": "medium",
     }
 
 
@@ -198,3 +274,27 @@ def _harness():
     from symnav_bench.cells.normalize import HarnessMeta
 
     return HarnessMeta("image", "pier", "deep", None)
+
+
+def _integration_bundle(tmp_path):
+    def integration_file(name, destination, content):
+        source = tmp_path / name
+        source.write_text(content, encoding="utf-8")
+        return IntegrationFile(source, PurePosixPath(destination), name)
+
+    shared = integration_file("shared", "/app/AGENTS.md", "shared")
+    skill = integration_file("skill", "/app/.agents/skills/symnav/SKILL.md", "skill")
+    rules = integration_file("rules", "/app/AGENTS.md", "rules")
+    settings = integration_file("settings", "/app/.claude/settings.json", "{}")
+    hook = integration_file("hook", "/tmp/symnav-bench/symnav-nudge.js", "hook")
+    return AgentIntegrationBundle(
+        id="full",
+        shared_rules=shared,
+        skill_directory=tmp_path,
+        skill_files=(skill,),
+        rules=rules,
+        allowed_commands=("overview", "resolve", "def", "refs", "context", "graph"),
+        claude_settings=settings,
+        claude_hook=hook,
+        content_hash="bundle-hash",
+    )
