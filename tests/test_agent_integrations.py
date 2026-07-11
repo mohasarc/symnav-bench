@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from symnav_bench.agent_integrations import SymnavIntegrationCatalog
+from symnav_bench.agents.claude import SymnavClaudeCode
+from symnav_bench.agents.codex import StockCodex, SymnavCodex
+from symnav_bench.agents.install import symnav_command_wrapper
 
 
 COMMANDS = ["overview", "resolve", "def", "refs", "context", "graph"]
@@ -82,6 +86,79 @@ def test_rejects_catalog_path_outside_checkout(tmp_path: Path) -> None:
         SymnavIntegrationCatalog.load(checkout)
 
 
+def test_stock_codex_installs_shared_rules_without_treatment_assets(tmp_path: Path) -> None:
+    bundle = SymnavIntegrationCatalog.load(_write_checkout(tmp_path)).bundle("full")
+
+    commands = [step.run for step in StockCodex(logs_dir=tmp_path / "logs", integration_bundle=bundle).install_spec().steps]
+    combined = "\n".join(commands)
+
+    assert _encoded(bundle.shared_rules.source) in combined
+    assert _encoded(bundle.rules.source) not in combined
+    assert _encoded(bundle.skill_files[0].source) not in combined
+    assert _encoded(bundle.claude_hook.source) not in combined
+    assert "install symnav" not in combined
+
+
+def test_full_codex_installs_shared_rules_bundle_rules_and_skill_byte_for_byte(tmp_path: Path) -> None:
+    bundle = SymnavIntegrationCatalog.load(_write_checkout(tmp_path)).bundle("full")
+
+    commands = [
+        step.run
+        for step in SymnavCodex(
+            logs_dir=tmp_path / "logs",
+            symnav_sha="a" * 40,
+            integration_bundle=bundle,
+        ).install_spec().steps
+    ]
+    combined = "\n".join(commands)
+
+    assert _encoded(bundle.shared_rules.source) in combined
+    assert _encoded(bundle.rules.source) in combined
+    assert _encoded(bundle.skill_files[0].source) in combined
+    assert _encoded(bundle.claude_settings.source) not in combined
+    assert _encoded(bundle.claude_hook.source) not in combined
+
+
+def test_full_claude_installs_every_bundle_asset_byte_for_byte(tmp_path: Path) -> None:
+    bundle = SymnavIntegrationCatalog.load(_write_checkout(tmp_path)).bundle("full")
+
+    commands = [
+        step.run
+        for step in SymnavClaudeCode(
+            logs_dir=tmp_path / "logs",
+            symnav_sha="a" * 40,
+            integration_bundle=bundle,
+        ).install_spec().steps
+    ]
+    combined = "\n".join(commands)
+
+    for integration_file in (
+        bundle.shared_rules,
+        bundle.rules,
+        *bundle.skill_files,
+        bundle.claude_settings,
+        bundle.claude_hook,
+    ):
+        assert _encoded(integration_file.source) in combined
+
+
+def test_variant_wrapper_rejects_sibling_command(tmp_path: Path) -> None:
+    upstream = tmp_path / "upstream"
+    upstream.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\"\n", encoding="utf-8")
+    upstream.chmod(0o755)
+    wrapper = tmp_path / "symnav"
+    wrapper.write_text(symnav_command_wrapper(("overview",), str(upstream)), encoding="utf-8")
+    wrapper.chmod(0o755)
+
+    allowed = subprocess.run([wrapper, "overview", "file.ts"], text=True, capture_output=True, check=False)
+    rejected = subprocess.run([wrapper, "refs", "symbol"], text=True, capture_output=True, check=False)
+
+    assert allowed.returncode == 0
+    assert allowed.stdout == "overview file.ts\n"
+    assert rejected.returncode == 2
+    assert rejected.stderr == "Unsupported symnav invocation for this benchmark arm.\n"
+
+
 def _write_checkout(root: Path) -> Path:
     checkout = root / "symnav"
     catalog = {
@@ -122,3 +199,9 @@ def _write_checkout(root: Path) -> Path:
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def _encoded(path: Path) -> str:
+    import base64
+
+    return base64.b64encode(path.read_bytes()).decode("ascii")
