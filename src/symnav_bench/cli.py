@@ -1,22 +1,25 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+from dataclasses import asdict
 from datetime import timedelta
 from pathlib import Path
+from typing import TextIO
 
 from symnav_bench import __version__
+from symnav_bench.batch_plan import BatchPlan, TrialSlot, plan_balanced_batches, plan_trial_slots
 from symnav_bench.cells.cell import Cell
 from symnav_bench.deepswe import TASK_SLUGS, configured_tasks_dir, ensure_deepswe_tasks
-from symnav_bench.report.cell_set import CellSet
-from symnav_bench.report.comparison import planned_comparisons
-from symnav_bench.report.render import write_report
 from symnav_bench.run.auth import validate_auth
 from symnav_bench.run.config import RunConfig
 from symnav_bench.run.runner import CellRunner, subprocess_pier_run
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, parse_conditions
+from symnav_bench.study import StudyManifest, protocol_mapping
+from symnav_bench.suite import SuiteManifest, build_suite_manifest
 from symnav_bench.tasks import list_tasks
 
 
@@ -30,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_command(args)
         if args.command == "report":
             return report_command(args)
+        if args.command == "plan-study":
+            return plan_study_command(args)
     except Exception as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -63,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--cells", type=Path, required=True)
     report_parser.add_argument("--out", type=Path, required=True)
     report_parser.add_argument("--compare", default="")
+
+    plan_study_parser = subcommands.add_parser("plan-study")
+    plan_study_parser.add_argument("--study", type=Path, required=True)
+    plan_study_parser.add_argument("--tasks-dir", type=Path, required=True)
+    plan_study_parser.add_argument("--json", action="store_true")
     return parser
 
 
@@ -103,10 +113,96 @@ def run_command(args: argparse.Namespace) -> int:
 
 
 def report_command(args: argparse.Namespace) -> int:
+    from symnav_bench.report.cell_set import CellSet
+    from symnav_bench.report.comparison import planned_comparisons
+    from symnav_bench.report.render import write_report
+
     cells = CellSet.load(args.cells)
     comparisons = planned_comparisons(cells, split_csv(args.compare) if args.compare else None)
     write_report(comparisons, cells, args.out)
     return 0
+
+
+def plan_study_command(args: argparse.Namespace) -> int:
+    study = StudyManifest.load(args.study)
+    suite = build_suite_manifest(args.tasks_dir, study.protocol.deep_swe_sha)
+    if args.json:
+        write_study_plan(study, sys.stdout, suite=suite)
+        return 0
+    slots = plan_trial_slots(study, suite)
+    print(
+        f"{study.id}: {len(suite.tasks)} tasks, "
+        f"{len(study.configurations)} configurations, {len(slots)} slots"
+    )
+    return 0
+
+
+def write_study_plan(
+    study: StudyManifest,
+    out: TextIO,
+    *,
+    suite: SuiteManifest,
+) -> None:
+    slots = plan_trial_slots(study, suite)
+    batches = [
+        batch
+        for configuration in study.configurations
+        for batch in plan_balanced_batches(
+            [slot for slot in slots if slot.configuration_id == configuration.id],
+            randomization_seed=study.protocol.randomization_seed,
+        )
+    ]
+    json.dump(
+        study_plan_mapping(study, suite, slots, batches),
+        out,
+        indent=2,
+        sort_keys=True,
+    )
+    out.write("\n")
+
+
+def study_plan_mapping(
+    study: StudyManifest,
+    suite: SuiteManifest,
+    slots: list[TrialSlot],
+    batches: list[BatchPlan],
+) -> dict:
+    return {
+        "study_id": study.id,
+        "protocol_fingerprint": study.protocol_fingerprint(),
+        "protocol": protocol_mapping(study.protocol),
+        "suite": {
+            "deep_swe_sha": suite.deep_swe_sha,
+            "fingerprint": suite.fingerprint,
+            "tasks": [asdict(task) for task in suite.tasks],
+        },
+        "configurations": [
+            {
+                "id": configuration.id,
+                "agent": configuration.spec.agent,
+                "model": configuration.spec.model,
+                "effort": configuration.spec.effort,
+                "agent_version": configuration.agent_version,
+            }
+            for configuration in study.configurations
+        ],
+        "slots": [asdict(slot) for slot in slots],
+        "batches": [
+            {
+                "study_id": batch.study_id,
+                "configuration_id": batch.configuration_id,
+                "batch_id": batch.batch_id,
+                "index": batch.index,
+                "slot_ids": [slot.slot_id for slot in batch.slots],
+            }
+            for batch in batches
+        ],
+        "coverage": {
+            "completed": 0,
+            "total": len(slots),
+            "fraction": 0.0,
+        },
+    }
 
 
 def split_csv(value: str) -> list[str]:
