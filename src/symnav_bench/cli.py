@@ -9,7 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TextIO
 
-from symnav_bench import __version__
+from symnav_bench.build_identity import build_version_text
 from symnav_bench.batch_plan import BatchPlan, TrialSlot, plan_balanced_batches, plan_trial_slots
 from symnav_bench.cells.cell import Cell
 from symnav_bench.deepswe import TASK_SLUGS, configured_tasks_dir, ensure_deepswe_tasks
@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="symnav-bench")
-    parser.add_argument("--version", action="version", version=__version__)
+    parser.add_argument("--version", action="version", version=build_version_text())
     subcommands = parser.add_subparsers(dest="command")
 
     list_parser = subcommands.add_parser("list-tasks")

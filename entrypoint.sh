@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${1:-}" == "--version" ]]; then
+  exec symnav-bench "$@"
+fi
+
 dockerd-entrypoint.sh dockerd >/tmp/dockerd.log 2>&1 &
 
 for _ in $(seq 1 60); do
