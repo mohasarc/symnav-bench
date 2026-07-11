@@ -1,66 +1,28 @@
 from __future__ import annotations
 
-from symnav_bench.agents.codex import StockCodex, SymnavCodex
-from symnav_bench.agents.directives import claude_settings_json, codex_agents_md
-from symnav_bench.agents.claude import SymnavClaudeCode
 from symnav_bench.agents.install import (
-    CODEX_AUTH_DOMAINS,
-    INSTALL_DOMAINS,
     append_text_step,
-    symnav_skill_markdown,
-    symnav_install_script,
+    pinned_symnav_install_script,
     toolchain_root_step,
     workspace_capture_step,
     write_text_step,
 )
 
 
-def test_symnav_install_script_pins_sha_and_builds() -> None:
-    script = symnav_install_script("a" * 40, codex=True)
+def test_pinned_symnav_install_script_checks_out_sha_and_builds() -> None:
+    script = pinned_symnav_install_script(
+        "a" * 40,
+        codex=True,
+        allowed_commands=("overview", "refs"),
+    )
+
     assert "git checkout 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'" in script
     assert "pnpm install --frozen-lockfile" in script
     assert "pnpm build" in script
-    assert "cp -R /opt/symnav/.agents/skills/symnav /app/.agents/skills/symnav" in script
-    assert "exec pnpm --dir /opt/symnav --filter symnav dev --cwd /app \"$@\"" in script
-    assert "has_cwd=0" in script
-    assert "--cwd|--cwd=*) has_cwd=1 ;;" in script
-    assert "exec pnpm --dir /opt/symnav --filter symnav dev -- \"$@\"" not in script
-    assert "ln -sf /app/bin/symnav /usr/local/bin/symnav" in script
-    assert "symnav --help >/dev/null" in script
-    assert "/app/bin/symnav /opt/symnav /app/.agents" not in script
-
-
-def test_symnav_install_script_can_limit_to_one_command() -> None:
-    script = symnav_install_script("a" * 40, codex=True, skill_variant="overview")
-    assert "allowed_commands='overview'" in script
-    assert "skill_help_path='/app/.agents/skills/symnav-overview/SKILL.md'" in script
-    assert "--help|-h|help)" in script
-    assert "Unsupported symnav invocation for this benchmark arm." in script
-    assert "cat > /app/.agents/skills/symnav-overview/SKILL.md" in script
-    assert "symnav overview ..." in script
-    assert "symnav refs" not in symnav_skill_markdown("overview")
-    assert "only" not in symnav_skill_markdown("overview")
-    assert "Other symnav commands" not in symnav_skill_markdown("overview")
-    assert "name: symnav-overview" in symnav_skill_markdown("overview")
-    assert "Symbol/fold tree" not in symnav_skill_markdown("overview")
-    assert "`overview` prints a symbol and fold tree" in symnav_skill_markdown("overview")
-
-
-def test_symnav_install_script_can_limit_to_paired_commands() -> None:
-    script = symnav_install_script("a" * 40, codex=True, skill_variant="overview-refs")
-    skill = symnav_skill_markdown("overview-refs")
     assert "allowed_commands='overview refs'" in script
-    assert "skill_help_path='/app/.agents/skills/symnav-overview-refs/SKILL.md'" in script
-    assert "cat > /app/.agents/skills/symnav-overview-refs/SKILL.md" in script
-    assert "for command in $allowed_commands" in script
-    assert "name: symnav-overview-refs" in skill
-    assert "symnav overview ..." in skill
-    assert "symnav refs ..." in skill
-    assert "symnav context" not in skill
-    assert "Other symnav commands" not in skill
-    assert "only" not in skill
-    assert "Write `src/orders.ts::charge`, not `/app/src/orders.ts::charge`" in skill
-    assert "choose the printed candidate" in skill
+    assert "Unsupported symnav invocation for this benchmark arm." in script
+    assert "exec pnpm --dir /opt/symnav --filter symnav dev --cwd /app \"$@\"" in script
+    assert "ln -sf /app/bin/symnav /usr/local/bin/symnav" in script
 
 
 def test_toolchain_root_creates_claude_compat_links() -> None:
@@ -68,85 +30,6 @@ def test_toolchain_root_creates_claude_compat_links() -> None:
     assert "[ -e /app/.claude/skills ] || ln -s ../.agents/skills /app/.claude/skills" in step.command
     assert "[ -e /app/CLAUDE.md ] || ln -s AGENTS.md /app/CLAUDE.md" in step.command
     assert "bin/symnav .agents/ .claude/ AGENTS.md CLAUDE.md" in step.command
-
-
-def test_codex_agents_md_timeout_rule_for_both_arms() -> None:
-    assert "yield_time_ms" in codex_agents_md(symnav=False)
-    assert "Hard rule" in codex_agents_md(symnav=False)
-    assert "ALWAYS wait at least 5 minutes" in codex_agents_md(symnav=False)
-    assert "pass at least 300000" in codex_agents_md(symnav=False)
-    assert "early empty poll is not the final result" in codex_agents_md(symnav=False)
-    assert "symnav" not in codex_agents_md(symnav=False).lower()
-    assert "yield_time_ms" in codex_agents_md(symnav=True)
-    assert "Hard rule" in codex_agents_md(symnav=True)
-    assert "ALWAYS wait at least 5 minutes" in codex_agents_md(symnav=True)
-    assert "pass at least 300000" in codex_agents_md(symnav=True)
-    assert "No exceptions; read the symnav skill first" in codex_agents_md(symnav=True)
-    assert "installed globally" in codex_agents_md(symnav=True)
-    assert "`symnav ...`" in codex_agents_md(symnav=True)
-    assert "`symnav --cwd /app" not in codex_agents_md(symnav=True)
-    assert "not container paths like `/app/src/file.ts::name`" in codex_agents_md(symnav=True)
-    assert "choose one printed candidate" in codex_agents_md(symnav=True)
-    assert "provides deterministic TypeScript orientation" in codex_agents_md(symnav=True)
-    assert "Available symnav commands include overview, resolve, def, refs, context, and graph" in codex_agents_md(
-        symnav=True
-    )
-    assert "Normal reads, search, tests, and edits remain available whenever they help" in codex_agents_md(
-        symnav=True
-    )
-    assert "never on a directory" in codex_agents_md(symnav=True)
-    assert "continue exploring" not in codex_agents_md(symnav=True)
-    assert "run symnav again" not in codex_agents_md(symnav=True)
-    assert "increasing depth or changing direction" not in codex_agents_md(symnav=True)
-    assert "after orientation" not in codex_agents_md(symnav=True)
-
-
-def test_codex_agents_md_can_describe_one_symnav_command() -> None:
-    text = codex_agents_md(symnav=True, symnav_skill_variant="context")
-    assert ".agents/skills/symnav-context/SKILL.md" in text
-    assert "This command provides deterministic TypeScript symbol navigation" in text
-    assert "Run it exactly as `symnav context ...`" in text
-    assert "not container paths like `/app/src/file.ts::name`" in text
-    assert "choose one printed candidate" in text
-    assert "overview, resolve, def, refs, context, and graph" not in text
-
-
-def test_codex_agents_md_can_describe_paired_symnav_commands() -> None:
-    text = codex_agents_md(symnav=True, symnav_skill_variant="overview-refs")
-    assert ".agents/skills/symnav-overview-refs/SKILL.md" in text
-    assert "read the symnav-overview-refs skill first" in text
-    assert "`symnav overview` and `symnav refs` commands are installed globally" in text
-    assert "Run them exactly as `symnav overview ...` or `symnav refs ...`" in text
-    assert "These commands provide deterministic TypeScript symbol navigation" in text
-    assert "not container paths like `/app/src/file.ts::name`" in text
-    assert "choose one printed candidate" in text
-    assert "symnav context" not in text
-    assert "overview, resolve, def, refs, context, and graph" not in text
-
-
-def test_claude_settings_hook() -> None:
-    settings = claude_settings_json()
-    assert "Grep|Glob|Read|Bash" in settings
-    assert "/tmp/symnav-bench/symnav-nudge.js" in settings
-
-
-def test_agent_allowlists_and_install_steps(tmp_path) -> None:
-    stock = StockCodex(logs_dir=tmp_path / "stock")
-    symnav = SymnavCodex(logs_dir=tmp_path / "symnav", symnav_sha="b" * 40)
-    claude = SymnavClaudeCode(logs_dir=tmp_path / "claude", symnav_sha="b" * 40)
-    assert set(CODEX_AUTH_DOMAINS).issubset(set(stock.network_allowlist().domains))
-    assert set(INSTALL_DOMAINS).issubset(set(symnav.network_allowlist().domains))
-    assert any("mkdir -p /app/.git/info" in step.run for step in claude.install_spec().steps)
-    assert any("/app/AGENTS.md" in step.run for step in claude.install_spec().steps)
-    assert any("/app/CLAUDE.md" in step.run and "-ef" in step.run for step in claude.install_spec().steps)
-    assert any("/tmp/symnav-bench/symnav-nudge.js" in step.run for step in claude.install_spec().steps)
-    assert not any("/app/symnav-nudge.js" in step.run for step in claude.install_spec().steps)
-    assert any("symnav-bench-capture-workspace" in step.run for step in stock.install_spec().steps)
-    assert any(str(tmp_path / "symnav") in step.run and "workspace/app" in step.run for step in symnav.install_spec().steps)
-    assert any(
-        "git clone https://github.com/mohasarc/symnav.git" in step.run
-        for step in symnav.install_spec().steps
-    )
 
 
 def test_write_text_step_base64_encodes_multiword_text() -> None:
