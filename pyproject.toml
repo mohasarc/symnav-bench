@@ -10,14 +10,14 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
-  "datacurve-pier",
-  "matplotlib",
-  "PyYAML",
+  "datacurve-pier==0.3.0",
+  "matplotlib==3.11.0",
+  "PyYAML==6.0.3",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest",
+  "pytest==9.1.1",
 ]
 
 [project.scripts]
