@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import shlex
 import textwrap
 from dataclasses import dataclass
 
 from symnav_bench.run_spec import SymnavCommand, SymnavSkillVariant, symnav_variant_commands
+from symnav_bench.agent_integrations import AgentIntegrationBundle, IntegrationFile
 
 
 INSTALL_DOMAINS: tuple[str, ...] = (
@@ -51,6 +53,8 @@ def write_text_step(path: str, text: str) -> InstallStep:
 
 def append_text_step(path: str, text: str, *, unless_same_file_as: str | None = None) -> InstallStep:
     encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    content_id = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    marker = f"symnav-bench injected instructions {content_id}"
     quoted_path = shlex.quote(path)
     quoted_compare = shlex.quote(unless_same_file_as) if unless_same_file_as else "''"
     return InstallStep(
@@ -66,10 +70,10 @@ def append_text_step(path: str, text: str, *, unless_same_file_as: str | None = 
                 f"printf %s {encoded} | base64 -d > \"$payload\"",
                 'rel="${path#/app/}"',
                 'if [ -e "$path" ]; then',
-                '  if ! grep -Fq "symnav-bench injected instructions" "$path"; then',
-                '    printf "\\n\\n<!-- symnav-bench injected instructions start -->\\n" >> "$path"',
+                f'  if ! grep -Fq "{marker}" "$path"; then',
+                f'    printf "\\n\\n<!-- {marker} start -->\\n" >> "$path"',
                 '    cat "$payload" >> "$path"',
-                '    printf "<!-- symnav-bench injected instructions end -->\\n" >> "$path"',
+                f'    printf "<!-- {marker} end -->\\n" >> "$path"',
                 "  fi",
                 '  if git -C /app ls-files --error-unmatch "$rel" >/dev/null 2>&1; then',
                 '    git -C /app update-index --skip-worktree -- "$rel"',
@@ -84,6 +88,111 @@ def append_text_step(path: str, text: str, *, unless_same_file_as: str | None = 
             ]
         ),
     )
+
+
+def append_integration_file_step(
+    integration_file: IntegrationFile,
+    *,
+    destination: str | None = None,
+    unless_same_file_as: str | None = None,
+) -> InstallStep:
+    return append_text_step(
+        destination or integration_file.destination.as_posix(),
+        integration_file.source.read_text(encoding="utf-8"),
+        unless_same_file_as=unless_same_file_as,
+    )
+
+
+def write_integration_file_step(
+    integration_file: IntegrationFile,
+    *,
+    destination: str | None = None,
+) -> InstallStep:
+    return write_text_step(
+        destination or integration_file.destination.as_posix(),
+        integration_file.source.read_text(encoding="utf-8"),
+    )
+
+
+def codex_integration_steps(bundle: AgentIntegrationBundle, *, treatment: bool) -> tuple[InstallStep, ...]:
+    steps = [append_integration_file_step(bundle.shared_rules)]
+    if treatment:
+        steps.append(append_integration_file_step(bundle.rules))
+        steps.extend(write_integration_file_step(file) for file in bundle.skill_files)
+    return tuple(steps)
+
+
+def symnav_command_wrapper(allowed_commands: tuple[str, ...], upstream: str) -> str:
+    allowed = " ".join(allowed_commands)
+    return "\n".join(
+        [
+            "#!/bin/sh",
+            "set -eu",
+            f"allowed_commands={shlex.quote(allowed)}",
+            f"upstream={shlex.quote(upstream)}",
+            'for arg in "$@"; do',
+            '  case "$arg" in',
+            "    overview|resolve|def|refs|context|graph|stats)",
+            "      allowed=0",
+            "      for command in $allowed_commands; do",
+            '        if [ "$arg" = "$command" ]; then allowed=1; fi',
+            "      done",
+            '      if [ "$allowed" -ne 1 ]; then',
+            '        echo "Unsupported symnav invocation for this benchmark arm." >&2',
+            "        exit 2",
+            "      fi",
+            "      break",
+            "      ;;",
+            "  esac",
+            "done",
+            'exec "$upstream" "$@"',
+            "",
+        ]
+    )
+
+
+def pinned_symnav_install_script(
+    symnav_sha: str,
+    *,
+    codex: bool,
+    allowed_commands: tuple[str, ...],
+) -> str:
+    escaped_sha = symnav_sha.replace("'", "")
+    wrapper = symnav_command_wrapper(allowed_commands, "/app/bin/symnav-real")
+    lines = [
+        "set -eu",
+        "mkdir -p /opt /app/bin /app/.git/info",
+        "git clone https://github.com/mohasarc/symnav.git /opt/symnav",
+        "cd /opt/symnav",
+        f"git checkout '{escaped_sha}'",
+        "pnpm install --frozen-lockfile",
+        "pnpm build",
+        "cat > /app/bin/symnav-real <<'EOF'",
+        "#!/bin/sh",
+        "has_cwd=0",
+        'for arg in "$@"; do',
+        '  case "$arg" in',
+        "    --cwd|--cwd=*) has_cwd=1 ;;",
+        "  esac",
+        "done",
+        'if [ "$has_cwd" -eq 1 ]; then',
+        '  exec pnpm --dir /opt/symnav --filter symnav dev "$@"',
+        "fi",
+        'exec pnpm --dir /opt/symnav --filter symnav dev --cwd /app "$@"',
+        "EOF",
+        "chmod +x /app/bin/symnav-real",
+        "cat > /app/bin/symnav <<'EOF'",
+        *wrapper.splitlines(),
+        "EOF",
+        "chmod +x /app/bin/symnav",
+        "ln -sf /app/bin/symnav /usr/local/bin/symnav",
+        "symnav --help >/dev/null",
+        "git config --global user.name symnav-bench",
+        "git config --global user.email symnav-bench@example.invalid",
+    ]
+    if codex:
+        lines.append("mkdir -p /app/.codex")
+    return "\n".join(lines)
 
 
 def workspace_capture_step(logs_dir: object, binaries: tuple[str, ...]) -> InstallStep:
