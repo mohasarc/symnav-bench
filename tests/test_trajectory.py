@@ -8,6 +8,7 @@ from symnav_bench.cells.trajectory import (
     classify,
     extract_commands,
     extract_tool_events,
+    summarize_adoption,
     write_commands_jsonl,
 )
 
@@ -147,6 +148,75 @@ def test_skill_reads_recognize_full_and_bundle_metadata_paths() -> None:
 
     assert extract_tool_events(variant)[0].kind == "skill"
     assert extract_tool_events(full)[0].kind == "skill"
+
+
+def test_summarizes_per_trial_tool_adoption() -> None:
+    summary = summarize_adoption(
+        extract_tool_events(_fixture("terra_nested_exec.json")),
+        agent_steps=10,
+    )
+
+    assert summary.used_symnav is True
+    assert summary.read_symnav_skill is False
+    assert summary.symnav_calls == 1
+    assert summary.symnav_calls_per_agent_step == 0.1
+    assert summary.symnav_failures == 0
+    assert summary.symnav_timeouts == 0
+    assert summary.first_symnav_step == 7
+    assert summary.search_calls == 1
+    assert summary.read_calls == 1
+    assert summary.patch_calls == 1
+    assert summary.command_counts == {"overview": 1}
+
+
+def test_summarizes_symnav_failures_timeouts_and_skill_reads() -> None:
+    events = extract_tool_events(
+        {
+            "steps": [
+                {
+                    "step_id": 2,
+                    "tool_calls": [
+                        {"function_name": "Bash", "arguments": {"command": "symnav resolve Foo"}}
+                    ],
+                    "observation": "Exit code 1\nnot found",
+                },
+                {
+                    "step_id": 3,
+                    "tool_calls": [
+                        {"function_name": "Read", "arguments": {"file_path": "/app/.agents/skills/symnav/SKILL.md"}}
+                    ],
+                },
+                {
+                    "step_id": 5,
+                    "tool_calls": [
+                        {"function_name": "Bash", "arguments": {"command": "symnav refs Foo"}}
+                    ],
+                    "observation": "command timed out",
+                },
+            ]
+        }
+    )
+
+    summary = summarize_adoption(events, agent_steps=None)
+
+    assert summary.read_symnav_skill is True
+    assert summary.symnav_calls == 2
+    assert summary.symnav_calls_per_agent_step == 0.0
+    assert summary.symnav_failures == 1
+    assert summary.symnav_timeouts == 1
+    assert summary.first_symnav_step == 2
+    assert summary.command_counts == {"resolve": 1, "refs": 1}
+
+
+def test_reprocessing_stored_terra_trajectory_reports_real_adoption() -> None:
+    summary = summarize_adoption(
+        extract_tool_events(_fixture("terra_nested_exec.json")),
+        agent_steps=4,
+    )
+
+    assert summary.symnav_calls > 0
+    assert summary.search_calls > 0
+    assert summary.read_calls > 0
 
 
 def test_codex_exec_commands_extract_in_order() -> None:
