@@ -292,12 +292,14 @@ def test_study_report_exports_compatible_metrics_without_legacy_data(
 
     write_report(StudyDataset.load(study_dir), tmp_path / "report")
 
-    markdown = (tmp_path / "report" / "report.md").read_text(encoding="utf-8")
-    assert "Study: `study`" in markdown
-    assert "performance score" in markdown
-    assert "Legacy" not in markdown
-    assert (tmp_path / "report" / "configurations.csv").exists()
-    assert (tmp_path / "report" / "tasks.csv").exists()
+    html = (tmp_path / "report" / "index.html").read_text(encoding="utf-8")
+    assert 'href="./static/styles.css"' in html
+    assert 'src="./static/app.js"' in html
+    assert '"id": "study"' in html
+    assert "Legacy benchmark cells stay separate" not in html
+    assert (tmp_path / "report" / "analysis-v1.json").exists()
+    assert (tmp_path / "report" / "exports" / "csv" / "tasks.csv").exists()
+    assert (tmp_path / "report" / "exports" / "parquet" / "tasks.parquet").exists()
 
 
 def write_study_directory(path: Path, tasks: tuple[str, ...] = ("task",)) -> Path:

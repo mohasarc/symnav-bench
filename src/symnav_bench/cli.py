@@ -117,12 +117,20 @@ def report_command(args: argparse.Namespace) -> int:
     from symnav_bench.report.render import write_report
     from symnav_bench.report.study_dataset import StudyDataset, import_legacy_cells
 
+    if args.study is not None:
+        return report_study_command(args)
     dataset = (
-        StudyDataset.load(args.study)
-        if args.study is not None
-        else import_legacy_cells(args.cells)
+        import_legacy_cells(args.cells)
     )
     write_report(dataset, args.out)
+    return 0
+
+
+def report_study_command(args: argparse.Namespace) -> int:
+    from symnav_bench.report.render import write_report
+    from symnav_bench.report.study_dataset import StudyDataset
+
+    write_report(StudyDataset.load(args.study), args.out)
     return 0
 
 
