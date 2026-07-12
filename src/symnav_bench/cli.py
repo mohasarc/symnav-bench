@@ -39,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
             return batch_matrix_command(args)
         if args.command == "merge-results":
             return merge_results_command(args)
+        if args.command == "raw-archive":
+            return raw_archive_command(args)
     except Exception as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -87,6 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
     merge_results_parser = subcommands.add_parser("merge-results")
     merge_results_parser.add_argument("--study-dir", type=Path, required=True)
     merge_results_parser.add_argument("--artifact", type=Path, action="append", required=True)
+    raw_archive_parser = subcommands.add_parser("raw-archive")
+    raw_archive_parser.add_argument("--archive", type=Path, required=True)
+    raw_archive_parser.add_argument("--artifact", type=Path, action="append", required=True)
     return parser
 
 
@@ -211,6 +216,20 @@ def merge_results_command(args: argparse.Namespace) -> int:
             ]
         },
         sys.stdout,
+        sort_keys=True,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
+def raw_archive_command(args: argparse.Namespace) -> int:
+    from symnav_bench.workflow import build_raw_archive
+
+    pointers = build_raw_archive(args.artifact, args.archive)
+    json.dump(
+        {attempt_id: asdict(pointer) for attempt_id, pointer in pointers.items()},
+        sys.stdout,
+        indent=2,
         sort_keys=True,
     )
     sys.stdout.write("\n")
