@@ -96,6 +96,8 @@ test("cell drawer contains scored trials, retries, metrics, and artifact links",
   assert.equal(drawer.metrics.partial, 0.75);
   assert.equal(drawer.adoption.mean_symnav_calls, 2);
   assert.equal(drawer.artifacts[0].direct_urls.patch, "patch.diff");
+  assert.equal(drawer.artifacts[0].archive_path, "attempts/scored-1");
+  assert.equal(drawer.scoredTrials[0].artifacts.archive_sha256, "a".repeat(64));
 });
 
 test("version ordering uses first parent for main and sequence for previews", () => {
@@ -144,6 +146,11 @@ function attempt(outcome, attemptId, repetition) {
     repetition,
     attempt_id: attemptId,
     outcome,
-    artifacts: { direct_urls: { patch: "patch.diff" } },
+    artifacts: {
+      archive_url: "https://example.test/batch.tar.gz",
+      archive_sha256: "a".repeat(64),
+      archive_path: `attempts/${attemptId}`,
+      direct_urls: { patch: "patch.diff" },
+    },
   };
 }

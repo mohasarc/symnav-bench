@@ -42,6 +42,13 @@ class AttemptDisposition:
 
 
 @dataclass(frozen=True)
+class AttemptArtifact:
+    archive: str
+    internal_path: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class AttemptRecord:
     schema_version: int
     identity: AttemptIdentity
@@ -56,6 +63,7 @@ class AttemptRecord:
     command_counts: dict[str, Any]
     adoption: AdoptionSummary
     written_at: str
+    artifact: AttemptArtifact | None = None
 
     @classmethod
     def load(cls, path: Path) -> "AttemptRecord":
@@ -74,6 +82,11 @@ class AttemptRecord:
             command_counts=dict(data.get("command_counts", {})),
             adoption=_load_adoption(data.get("adoption")),
             written_at=str(data["written_at"]),
+            artifact=(
+                AttemptArtifact(**data["artifact"])
+                if isinstance(data.get("artifact"), Mapping)
+                else None
+            ),
         )
 
     def to_json(self) -> dict[str, Any]:

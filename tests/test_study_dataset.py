@@ -302,6 +302,32 @@ def test_study_report_exports_compatible_metrics_without_legacy_data(
     assert (tmp_path / "report" / "exports" / "parquet" / "tasks.parquet").exists()
 
 
+def test_study_report_carries_archived_attempt_into_trial_drawer_payload(
+    tmp_path: Path,
+) -> None:
+    study_dir = write_study_directory(tmp_path / "study")
+    attempt = attempt_mapping("stock", 1, "stock-1", "passed")
+    attempt["artifact"] = {
+        "archive": "https://example.test/batch.tar.gz",
+        "internal_path": "attempts/stock-1",
+        "sha256": "e" * 64,
+    }
+    write_attempt(study_dir, "batch-1", attempt)
+
+    write_report(StudyDataset.load(study_dir), tmp_path / "report")
+
+    payload = json.loads((tmp_path / "report" / "analysis-v1.json").read_text())
+    archived = payload["attempts"][0]["artifacts"]
+    assert archived == {
+        "archive_url": "https://example.test/batch.tar.gz",
+        "archive_sha256": "e" * 64,
+        "archive_path": "attempts/stock-1",
+        "direct_urls": {},
+    }
+    html = (tmp_path / "report" / "index.html").read_text(encoding="utf-8")
+    assert "https://example.test/batch.tar.gz" in html
+
+
 def write_study_directory(path: Path, tasks: tuple[str, ...] = ("task",)) -> Path:
     protocol = copy.deepcopy(PROTOCOL)
     protocol_fingerprint = fingerprint(protocol)

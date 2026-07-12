@@ -5,6 +5,7 @@ import pytest
 from symnav_bench.batch_plan import TrialSlot
 from symnav_bench.cells.attempt import (
     ATTEMPT_SCHEMA_VERSION,
+    AttemptArtifact,
     AttemptDisposition,
     AttemptIdentity,
     AttemptRecord,
@@ -98,6 +99,27 @@ def test_missing_slot_stays_unresolved() -> None:
     assert result.scored_attempt is None
     assert result.attempts == ()
     assert result.warnings == ()
+
+
+def test_load_preserves_workflow_artifact_pointer(tmp_path) -> None:
+    attempt = _attempt(_slot(), "attempt-1", "passed")
+    value = attempt.to_json()
+    value["artifact"] = {
+        "archive": "https://example.test/batch.tar.gz",
+        "internal_path": "attempts/attempt-1",
+        "sha256": "a" * 64,
+    }
+    path = tmp_path / "attempt.json"
+    path.write_text(__import__("json").dumps(value), encoding="utf-8")
+
+    loaded = AttemptRecord.load(path)
+
+    assert loaded.artifact == AttemptArtifact(
+        "https://example.test/batch.tar.gz",
+        "attempts/attempt-1",
+        "a" * 64,
+    )
+    assert loaded.to_json()["artifact"] == value["artifact"]
 
 
 def _result(

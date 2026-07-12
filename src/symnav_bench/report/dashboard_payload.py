@@ -262,10 +262,23 @@ def _artifact_pointer(attempt: AttemptRecord) -> ArtifactPointer:
         for name, value in attempt.usage.items()
         if name.endswith("_url") and isinstance(value, str)
     }
+    artifact = attempt.artifact
     return ArtifactPointer(
-        archive_url=_optional_string(attempt.usage.get("archive_url")),
-        archive_sha256=_optional_string(attempt.usage.get("archive_sha256")),
-        archive_path=_optional_string(attempt.usage.get("archive_path")),
+        archive_url=(
+            artifact.archive
+            if artifact is not None
+            else _optional_string(attempt.usage.get("archive_url"))
+        ),
+        archive_sha256=(
+            artifact.sha256
+            if artifact is not None
+            else _optional_string(attempt.usage.get("archive_sha256"))
+        ),
+        archive_path=(
+            artifact.internal_path
+            if artifact is not None
+            else _optional_string(attempt.usage.get("archive_path"))
+        ),
         direct_urls=direct_urls,
     )
 
