@@ -9,6 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TextIO
 
+from symnav_bench import __version__
 from symnav_bench.build_identity import build_version_text
 from symnav_bench.batch_plan import BatchPlan, TrialSlot, plan_balanced_batches, plan_trial_slots
 from symnav_bench.cells.attempt import AttemptRecord

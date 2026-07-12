@@ -7,6 +7,7 @@ import yaml
 from pathlib import PurePosixPath
 from types import SimpleNamespace
 
+import symnav_bench.cli as cli
 from symnav_bench.agent_integrations import AgentIntegrationBundle, IntegrationFile
 from symnav_bench.run.auth import validate_auth
 from symnav_bench.cli import run_exit_code
@@ -20,6 +21,10 @@ from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, Condition
 from symnav_bench.study import AgentConfiguration
 from symnav_bench.suite import TaskManifestEntry
+
+
+def test_cli_has_package_version_fallback() -> None:
+    assert cli.__version__ == "0.1.0"
 
 
 def test_matrix_expansion(tmp_path) -> None:
