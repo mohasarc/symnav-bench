@@ -7,6 +7,7 @@ from random import Random
 from statistics import mean
 
 from symnav_bench.report.study_dataset import ConfigurationMetrics
+from symnav_bench.study import SymnavRevision
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,9 @@ class ConditionComparison:
     ties: int
     losses: int
     primary: bool
+    study_id: str | None
+    symnav_revision: SymnavRevision | None
+    suite_fingerprint: str | None
 
 
 def compare_condition_to_stock(
@@ -48,6 +52,9 @@ def compare_condition_to_stock(
     randomization_samples: int = 100_000,
     seed: int,
     practical_threshold: float = 0.05,
+    study_id: str | None = None,
+    symnav_revision: SymnavRevision | None = None,
+    suite_fingerprint: str | None = None,
 ) -> ConditionComparison:
     _validate_pair(stock, treatment)
     stock_tasks = {task.task: task for task in stock.tasks}
@@ -93,6 +100,9 @@ def compare_condition_to_stock(
         ties=sum(task.delta == 0 for task in task_deltas),
         losses=sum(task.delta < 0 for task in task_deltas),
         primary=treatment.key.condition == "symnav",
+        study_id=study_id,
+        symnav_revision=symnav_revision,
+        suite_fingerprint=suite_fingerprint,
     )
 
 
