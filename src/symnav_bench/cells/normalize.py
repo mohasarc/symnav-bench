@@ -8,9 +8,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from symnav_bench.batch_plan import TrialSlot
 from symnav_bench.cell_identity import CellIdentity
+from symnav_bench.cells.attempt import (
+    ATTEMPT_SCHEMA_VERSION,
+    AttemptIdentity,
+    AttemptRecord,
+    classify_attempt,
+)
 from symnav_bench.cells.cell import Cell, CellStatus
 from symnav_bench.cells.trajectory import ExecutedCommand, extract_commands, write_commands_jsonl
+from symnav_bench.run.job_config import HarnessIdentity
 
 
 @dataclass(frozen=True)
@@ -27,6 +35,47 @@ class HarnessMeta:
             "deep_swe_ref": self.deep_swe_ref,
             "symnav_ref": self.symnav_ref,
         }
+
+
+def normalize_attempt(
+    trial_dir: Path | None,
+    slot: TrialSlot,
+    identity: AttemptIdentity,
+    harness: HarnessIdentity,
+    pier_error: Exception | None,
+    out_dir: Path,
+) -> AttemptRecord:
+    if identity.slot_id != slot.slot_id:
+        raise ValueError("attempt identity slot does not match trial slot")
+    attempt_dir = out_dir / slot.slot_id / "attempts" / identity.attempt_id
+    attempt_dir.mkdir(parents=True, exist_ok=False)
+    result = _read_json(trial_dir / "result.json") if trial_dir else {}
+    trajectory = _read_json(trial_dir / "agent" / "trajectory.json") if trial_dir else {}
+    commands = extract_commands(trajectory)
+    write_commands_jsonl(commands, attempt_dir / "commands.jsonl")
+    if trial_dir:
+        _copy_raw_trial_files(trial_dir, attempt_dir / "raw")
+        _copy_captured_workspace_artifacts(trial_dir, attempt_dir / "raw" / "workspace")
+        _write_workspace_artifacts(trial_dir, attempt_dir / "raw" / "workspace")
+    attempt = AttemptRecord(
+        schema_version=ATTEMPT_SCHEMA_VERSION,
+        identity=identity,
+        slot=slot,
+        disposition=classify_attempt(result, pier_error),
+        rewards=_rewards(result),
+        usage=_usage(result),
+        timing=_timing(result),
+        agent_version=_agent_version(result),
+        harness=harness,
+        exception=_exception(result, pier_error),
+        command_counts=_command_counts(commands),
+        written_at=datetime.now(UTC).isoformat(),
+    )
+    (attempt_dir / "attempt.json").write_text(
+        json.dumps(attempt.to_json(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return attempt
 
 
 def normalize_trial(
@@ -208,6 +257,26 @@ def _agent_version(result: dict[str, Any]) -> str | None:
         return None
     version = agent_info.get("version")
     return str(version) if version is not None else None
+
+
+def _exception(
+    result: dict[str, Any],
+    pier_error: Exception | None,
+) -> dict[str, Any] | None:
+    info = result.get("exception_info")
+    exception = dict(info) if isinstance(info, dict) else None
+    if isinstance(info, str):
+        exception = {"message": info}
+    if pier_error is not None:
+        pier_exception = {
+            "exception_type": type(pier_error).__name__,
+            "message": str(pier_error),
+        }
+        if exception is None:
+            exception = pier_exception
+        else:
+            exception["pier_error"] = pier_exception
+    return exception
 
 
 def _command_counts(commands: list[ExecutedCommand]) -> dict[str, Any]:
