@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from statistics import mean
+from statistics import mean, median
 from typing import Any, cast
 
 from symnav_bench.batch_plan import TrialSlot, plan_trial_slots, slot_id
@@ -202,6 +202,16 @@ def compute_configuration_metrics(
         _repetition_score(results, complete_tasks, repetition)
         for repetition in range(1, repetitions + 1)
     ) if complete_tasks else ()
+    scored_attempts = [
+        result.scored_attempt
+        for result in results
+        if result.scored_attempt is not None
+    ]
+    costs = _usage_values(scored_attempts, "cost_usd_imputed")
+    successes = sum(
+        attempt.disposition.outcome == "passed" for attempt in scored_attempts
+    )
+    total_cost = sum(costs) if costs else None
     return ConfigurationMetrics(
         key=key,
         coverage=coverage,
@@ -215,8 +225,12 @@ def compute_configuration_metrics(
         mean_partial=_mean_optional(
             [task.mean_partial for task in completed_metrics]
         ),
-        total_cost=None,
-        cost_per_success=None,
+        total_cost=total_cost,
+        cost_per_success=(
+            total_cost / successes
+            if total_cost is not None and successes > 0
+            else None
+        ),
         adoption=None,
     )
 
@@ -409,6 +423,7 @@ def _effectiveness_task_metrics(
         for result in results
         if result.slot.task == task and result.scored_attempt is not None
     ]
+    costs = _usage_values(attempts, "cost_usd_imputed")
     return TaskMetrics(
         task=task,
         scored_trials=len(attempts),
@@ -420,11 +435,17 @@ def _effectiveness_task_metrics(
         mean_f2p=_mean_reward(attempts, "f2p"),
         mean_p2p=_mean_reward(attempts, "p2p"),
         mean_partial=_mean_reward(attempts, "partial"),
-        mean_cost=None,
-        median_cost=None,
-        mean_output_tokens=None,
-        mean_steps=None,
-        mean_duration_seconds=None,
+        mean_cost=mean(costs) if costs else None,
+        median_cost=median(costs) if costs else None,
+        mean_output_tokens=_mean_optional(
+            [_number(attempt.usage.get("n_output_tokens")) for attempt in attempts]
+        ),
+        mean_steps=_mean_optional(
+            [_number(attempt.usage.get("n_agent_steps")) for attempt in attempts]
+        ),
+        mean_duration_seconds=_mean_optional(
+            [_duration_seconds(attempt) for attempt in attempts]
+        ),
         adoption=None,
     )
 
@@ -457,3 +478,26 @@ def _number(value: object) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
+
+
+def _usage_values(attempts: list[AttemptRecord], key: str) -> list[float]:
+    return [
+        value
+        for attempt in attempts
+        if (value := _number(attempt.usage.get(key))) is not None
+    ]
+
+
+def _duration_seconds(attempt: AttemptRecord) -> float | None:
+    direct = _number(attempt.timing.get("duration_seconds"))
+    if direct is not None:
+        return direct
+    total = _number(attempt.timing.get("total_seconds"))
+    if total is not None:
+        return total
+    values = [
+        value
+        for name, raw in attempt.timing.items()
+        if name.endswith("_seconds") and (value := _number(raw)) is not None
+    ]
+    return sum(values) if values else None

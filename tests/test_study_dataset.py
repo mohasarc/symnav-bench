@@ -192,6 +192,48 @@ def test_partial_rewards_are_averaged_within_task_then_across_tasks(
     assert metrics.mean_partial == 0.5
 
 
+def test_efficiency_includes_failed_trials_and_preserves_distributions(
+    tmp_path: Path,
+) -> None:
+    study_dir = write_study_directory(tmp_path, tasks=("task-a", "task-b"))
+    stock = {
+        "task-a": ["passed"] * 4,
+        "task-b": ["failed"] * 4,
+    }
+    write_metric_attempts(study_dir, stock, stock)
+    costs = {
+        "task-a": [1.0, 2.0, 3.0, 4.0],
+        "task-b": [10.0, 20.0, 30.0, 40.0],
+    }
+    for path in study_dir.glob("**/attempt.json"):
+        attempt = json.loads(path.read_text(encoding="utf-8"))
+        if attempt["slot"]["condition"] != "stock":
+            continue
+        task = attempt["slot"]["task"]
+        repetition = attempt["slot"]["repetition"]
+        cost = costs[task][repetition - 1]
+        attempt["usage"] = {
+            "cost_usd_imputed": cost,
+            "n_output_tokens": cost * 10,
+            "n_agent_steps": cost * 2,
+        }
+        attempt["timing"] = {"duration_seconds": cost * 3}
+        path.write_text(json.dumps(attempt), encoding="utf-8")
+
+    dataset = StudyDataset.load(study_dir)
+    stock_key = next(key for key in dataset.configurations() if key.condition == "stock")
+    metrics = compute_configuration_metrics(dataset, stock_key)
+
+    task_a, task_b = metrics.tasks
+    assert (task_a.mean_cost, task_a.median_cost) == (2.5, 2.5)
+    assert (task_b.mean_cost, task_b.median_cost) == (25.0, 25.0)
+    assert task_b.mean_output_tokens == 250.0
+    assert task_b.mean_steps == 50.0
+    assert task_b.mean_duration_seconds == 75.0
+    assert metrics.total_cost == 110.0
+    assert metrics.cost_per_success == 27.5
+
+
 def write_study_directory(path: Path, tasks: tuple[str, ...] = ("task",)) -> Path:
     protocol = copy.deepcopy(PROTOCOL)
     protocol_fingerprint = fingerprint(protocol)
