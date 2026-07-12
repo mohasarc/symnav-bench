@@ -5,7 +5,7 @@ import re
 import shlex
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 TIMEOUT_MARKERS: tuple[str, ...] = (
@@ -19,10 +19,13 @@ TIMEOUT_MARKERS: tuple[str, ...] = (
 MAX_COMMAND_OUTPUT_CHARS = 200_000
 
 
+ToolEventKind = Literal["shell", "read", "search", "patch", "skill", "other"]
+
+
 @dataclass(frozen=True)
-class ExecutedCommand:
+class NormalizedToolEvent:
     step_id: int
-    timestamp: str
+    timestamp: str | None
     tool: str
     command: str
     args: dict[str, Any]
@@ -33,6 +36,29 @@ class ExecutedCommand:
     output_chars: int
     output_truncated: bool
     output: str
+    sequence: int = 0
+    outer_tool: str = ""
+    kind: ToolEventKind = "other"
+    session_id: str | int | None = None
+    parser_warning: str | None = None
+
+
+ExecutedCommand = NormalizedToolEvent
+
+
+@dataclass(frozen=True)
+class AdoptionSummary:
+    used_symnav: bool
+    read_symnav_skill: bool
+    symnav_calls: int
+    symnav_calls_per_agent_step: float
+    symnav_failures: int
+    symnav_timeouts: int
+    first_symnav_step: int | None
+    search_calls: int
+    read_calls: int
+    patch_calls: int
+    command_counts: dict[str, int]
 
 
 def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
