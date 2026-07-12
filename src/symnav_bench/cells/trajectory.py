@@ -99,7 +99,7 @@ def extract_tool_events(trajectory: Mapping[str, Any]) -> list[NormalizedToolEve
                 skill_paths=skill_paths,
             )
             events.append(event)
-    return events
+    return _reconstruct_command_sessions(events)
 
 
 def extract_nested_exec_events(event: Mapping[str, Any]) -> list[NormalizedToolEvent]:
@@ -567,6 +567,57 @@ def _integer(value: Any, fallback: int) -> int:
         return fallback
 
 
+def _reconstruct_command_sessions(events: list[NormalizedToolEvent]) -> list[NormalizedToolEvent]:
+    reconstructed: list[NormalizedToolEvent] = []
+    commands_by_session: dict[str, int] = {}
+    commands_by_cell: dict[str, int] = {}
+    for event in events:
+        if event.tool == "wait":
+            cell_id = str(event.args.get("cell_id") or "")
+            command_index = commands_by_cell.get(cell_id)
+            if command_index is not None:
+                reconstructed[command_index] = _with_completion(reconstructed[command_index], event)
+                continue
+        if event.tool == "write_stdin":
+            session_id = str(event.session_id or "")
+            command_index = commands_by_session.get(session_id)
+            if command_index is not None:
+                original = reconstructed[command_index]
+                reconstructed[command_index] = _with_completion(original, event)
+                if event.outer_tool == "exec":
+                    continue
+                event = replace(event, command=original.command, tags=original.tags)
+        command_index = len(reconstructed)
+        reconstructed.append(event)
+        if event.command and event.session_id is not None:
+            commands_by_session[str(event.session_id)] = command_index
+        cell_id = _running_cell_id(event.output)
+        if event.command and cell_id is not None:
+            commands_by_cell[cell_id] = command_index
+    return [replace(event, sequence=sequence) for sequence, event in enumerate(reconstructed)]
+
+
+def _with_completion(
+    original: NormalizedToolEvent,
+    completion: NormalizedToolEvent,
+) -> NormalizedToolEvent:
+    return replace(
+        original,
+        exit_code=completion.exit_code,
+        succeeded=completion.succeeded,
+        timed_out=completion.timed_out,
+        output=completion.output,
+        output_chars=completion.output_chars,
+        output_truncated=completion.output_truncated,
+        parser_warning=completion.parser_warning or original.parser_warning,
+    )
+
+
+def _running_cell_id(text: str) -> str | None:
+    match = re.search(r"Script running with cell ID ([^\s]+)", text)
+    return match.group(1) if match else None
+
+
 def _truncate_output(text: str) -> str:
     if len(text) <= MAX_COMMAND_OUTPUT_CHARS:
         return text
@@ -594,9 +645,9 @@ def _exit_code(text: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _running_session_id(text: str) -> str | None:
+def _running_session_id(text: str) -> int | None:
     match = re.search(r"Process running with session ID (\d+)", text)
-    return match.group(1) if match else None
+    return int(match.group(1)) if match else None
 
 
 def _symnav_subcommand(command: str) -> str | None:
