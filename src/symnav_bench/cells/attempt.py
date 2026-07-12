@@ -68,12 +68,17 @@ class AttemptRecord:
     @classmethod
     def load(cls, path: Path) -> "AttemptRecord":
         data = json.loads(path.read_text(encoding="utf-8"))
+        rewards = dict(data.get("rewards", {}))
+        disposition = _canonical_disposition(
+            AttemptDisposition(**data["disposition"]),
+            rewards,
+        )
         return cls(
             schema_version=int(data["schema_version"]),
             identity=AttemptIdentity(**data["identity"]),
             slot=TrialSlot(**data["slot"]),
-            disposition=AttemptDisposition(**data["disposition"]),
-            rewards=dict(data.get("rewards", {})),
+            disposition=disposition,
+            rewards=rewards,
             usage=dict(data.get("usage", {})),
             timing=dict(data.get("timing", {})),
             agent_version=data.get("agent_version"),
@@ -191,7 +196,29 @@ def _verifier_rewards(result: Mapping[str, Any]) -> dict[str, Any]:
     rewards = verifier.get("rewards")
     if not isinstance(rewards, Mapping):
         return {}
+    nested_reward = rewards.get("reward")
+    if isinstance(nested_reward, (int, float)) and not isinstance(nested_reward, bool):
+        return {"reward": nested_reward}
     return {str(key): value for key, value in rewards.items()}
+
+
+def _canonical_disposition(
+    disposition: AttemptDisposition,
+    rewards: Mapping[str, Any],
+) -> AttemptDisposition:
+    reward = rewards.get("reward")
+    if (
+        disposition.scored_failure_reason != "verifier"
+        or not isinstance(reward, (int, float))
+        or isinstance(reward, bool)
+    ):
+        return disposition
+    return AttemptDisposition(
+        outcome="passed" if reward == 1.0 else "failed",
+        scored_failure_reason=None if reward == 1.0 else "verifier",
+        retry_reason=None,
+        detail=disposition.detail,
+    )
 
 
 def _is_full_reward(value: Any) -> bool:

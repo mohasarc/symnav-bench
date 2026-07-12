@@ -25,6 +25,35 @@ def test_binary_verifier_reward_defines_pass_or_failure() -> None:
     assert failed.scored_failure_reason == "verifier"
 
 
+def test_nested_canonical_reward_ignores_verifier_diagnostics() -> None:
+    result = {
+        "verifier_result": {
+            "rewards": {
+                "reward": 1.0,
+                "f2p": 1.0,
+                "f2p_passed": 25,
+                "f2p_total": 25,
+                "p2p": 1.0,
+                "p2p_passed": 1679,
+                "p2p_total": 1679,
+                "partial": 1.0,
+            }
+        }
+    }
+
+    assert classify_attempt(result, None).outcome == "passed"
+
+
+def test_nested_canonical_zero_reward_is_a_verifier_failure() -> None:
+    result = {
+        "verifier_result": {
+            "rewards": {"reward": 0.0, "f2p_passed": 25, "f2p_total": 25}
+        }
+    }
+
+    assert classify_attempt(result, None).outcome == "failed"
+
+
 def test_verifier_reward_wins_over_agent_exit_exception() -> None:
     disposition = classify_attempt(
         _result({"f2p": 1.0, "p2p": 1.0}, "NonZeroAgentExitCodeError"),
@@ -120,6 +149,19 @@ def test_load_preserves_workflow_artifact_pointer(tmp_path) -> None:
         "a" * 64,
     )
     assert loaded.to_json()["artifact"] == value["artifact"]
+
+
+def test_load_corrects_historical_verifier_outcome_from_canonical_reward(tmp_path) -> None:
+    attempt = _attempt(_slot(), "attempt-1", "failed")
+    value = attempt.to_json()
+    value["rewards"] = {"reward": 1.0, "f2p_total": 25}
+    path = tmp_path / "attempt.json"
+    path.write_text(__import__("json").dumps(value), encoding="utf-8")
+
+    loaded = AttemptRecord.load(path)
+
+    assert loaded.disposition.outcome == "passed"
+    assert loaded.disposition.scored_failure_reason is None
 
 
 def _result(
