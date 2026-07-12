@@ -51,10 +51,108 @@ function render() {
     renderEfficiency(document.querySelector("#view-content"), taskRows);
     return;
   }
+  if (state.view === "usage") {
+    renderToolUsage(document.querySelector("#view-content"), taskRows);
+    return;
+  }
   document.querySelector("#view-content").replaceChildren(
     Object.assign(document.createElement("p"), {
       textContent: `${taskRows.length} task rows match current filters`,
     }),
+  );
+}
+
+function renderToolUsage(container, taskRows) {
+  const configurations = payload.configurations.filter(
+    (item) =>
+      item.adoption &&
+      (state.configurationId === "all" || item.id === state.configurationId) &&
+      (state.condition === "all" || item.condition === state.condition),
+  );
+  if (!configurations.length) {
+    container.replaceChildren(emptyState("Tool event data is not available for selected runs."));
+    return;
+  }
+  const cards = document.createElement("div");
+  cards.className = "usage-cards";
+  for (const item of configurations) {
+    const card = document.createElement("article");
+    card.className = item.full_symnav ? "usage-card full-symnav" : "usage-card";
+    const heading = document.createElement("h3");
+    heading.textContent = item.label;
+    card.append(
+      heading,
+      definitionList({
+        trials_using_symnav: formatMetric(item.adoption.used_symnav_rate, "performance_score"),
+        trials_reading_skill: formatMetric(item.adoption.read_symnav_skill_rate, "performance_score"),
+        mean_symnav_calls: item.adoption.mean_symnav_calls,
+        calls_per_agent_step: item.adoption.mean_symnav_calls_per_agent_step,
+        first_symnav_step: item.adoption.mean_first_symnav_step,
+        symnav_failures: item.adoption.mean_symnav_failures,
+        symnav_timeouts: item.adoption.mean_symnav_timeouts,
+      }),
+    );
+    cards.append(card);
+  }
+  const substitution = document.createElement("section");
+  substitution.className = "chart-section inset";
+  const heading = document.createElement("h3");
+  heading.textContent = "Navigation substitution";
+  substitution.append(heading, substitutionChart(configurations));
+  const commands = document.createElement("section");
+  commands.className = "chart-section inset";
+  const commandHeading = document.createElement("h3");
+  commandHeading.textContent = "Mean symnav command mix";
+  commands.append(commandHeading, commandTable(configurations));
+  container.replaceChildren(cards, substitution, commands);
+}
+
+function substitutionChart(configurations) {
+  const values = configurations.flatMap((item) => [
+    { label: `${item.condition} · search`, value: item.adoption.mean_search_calls, full: item.full_symnav },
+    { label: `${item.condition} · read`, value: item.adoption.mean_read_calls, full: item.full_symnav },
+    { label: `${item.condition} · patch`, value: item.adoption.mean_patch_calls, full: item.full_symnav },
+    { label: `${item.condition} · symnav`, value: item.adoption.mean_symnav_calls, full: item.full_symnav },
+  ]);
+  const max = Math.max(...values.map((item) => item.value ?? 0), 1);
+  const width = 700;
+  const height = values.length * 28 + 20;
+  const svg = svgElement("svg", { viewBox: `0 0 ${width} ${height}`, role: "img" });
+  svg.classList.add("chart");
+  values.forEach((item, index) => {
+    const y = index * 28 + 18;
+    const label = svgElement("text", { x: 4, y, class: "resource-label" });
+    label.textContent = item.label;
+    const bar = svgElement("rect", {
+      x: 150,
+      y: y - 12,
+      width: ((item.value ?? 0) / max) * 520,
+      height: 16,
+      rx: 3,
+      class: item.full ? "resource-bar primary" : "resource-bar",
+    });
+    const title = svgElement("title", {});
+    title.textContent = `${item.label}: ${formatNumber(item.value ?? 0)}`;
+    bar.append(title);
+    svg.append(label, bar);
+  });
+  return svg;
+}
+
+function commandTable(configurations) {
+  const commandNames = [
+    ...new Set(
+      configurations.flatMap((item) => Object.keys(item.adoption.mean_command_counts ?? {})),
+    ),
+  ].sort();
+  if (!commandNames.length) return emptyState("No symnav command calls were recorded.");
+  return dataTable(
+    ["Configuration", ...commandNames],
+    configurations.map((item) => [
+      item.label,
+      ...commandNames.map((command) => formatNumber(item.adoption.mean_command_counts[command] ?? 0)),
+    ]),
+    configurations.map((item) => (item.full_symnav ? "full-symnav" : "")),
   );
 }
 
