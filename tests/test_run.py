@@ -15,7 +15,7 @@ from symnav_bench.cells.attempt import AttemptDisposition
 from symnav_bench.run.config import RunConfig
 from symnav_bench.run.job_config import HarnessIdentity, build_job_yaml
 from symnav_bench.run.limits import next_backoff, parse_limit_reset
-from symnav_bench.run.runner import CellRunner, build_pier_run_command, find_trial_dir
+from symnav_bench.run.runner import CellRunner, StudyRunContext, build_pier_run_command, find_trial_dir
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, Condition
 from symnav_bench.study import AgentConfiguration
@@ -190,6 +190,36 @@ def test_runner_continues_after_error(tmp_path) -> None:
     runner = CellRunner(config, harness=_harness(), pier=pier, sleeper=lambda seconds: None)
     attempts = runner.run_all()
     assert [attempt.disposition.outcome for attempt in attempts] == ["retryable_error", "passed"]
+
+
+def test_study_runner_pins_bundle_task_and_agent_identity(tmp_path) -> None:
+    task = TaskManifestEntry("task", "typescript", "f" * 64)
+    configuration = AgentConfiguration("codex-terra-medium", AgentSpec("codex", "terra", "medium"), "0.31.0")
+    context = StudyRunContext(configuration, {"task": task}, _integration_bundle(tmp_path), 9000, "a" * 40)
+    config = RunConfig(
+        specs=[configuration.spec], conditions=[Condition("symnav", "b" * 40)], tasks=["task"],
+        reps=1, rep_start=0, parallel=1, timeout_multiplier=None,
+        max_limit_wait=timedelta(minutes=1), results_dir=tmp_path / "results", tasks_dir=tmp_path,
+    )
+    captured = []
+
+    def pier(job_yaml, jobs_dir):
+        captured.append(yaml.safe_load(job_yaml.read_text()))
+        (jobs_dir / "agent").mkdir()
+        (jobs_dir / "agent/trajectory.json").write_text('{"steps":[]}', encoding="utf-8")
+        (jobs_dir / "result.json").write_text(
+            '{"agent_info":{"version":"0.31.0"},"verifier_result":{"rewards":{"f2p":1.0}}}',
+            encoding="utf-8",
+        )
+
+    attempt = CellRunner(config, _harness(), pier, study_context=context).run_all()[0]
+
+    assert captured[0]["agents"][0]["kwargs"]["integration_bundle"]["content_hash"] == "bundle-hash"
+    assert captured[0]["agents"][0]["kwargs"]["version"] == "0.31.0"
+    assert captured[0]["agents"][0]["override_timeout_sec"] == 9000
+    assert attempt.harness.task_checksum == "f" * 64
+    assert attempt.harness.bundle_hash == "bundle-hash"
+    assert attempt.harness.deep_swe_sha == "a" * 40
 
 
 def test_runner_normalizes_pier_trial_result_after_agent_failure(tmp_path) -> None:

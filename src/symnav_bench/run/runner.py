@@ -4,6 +4,8 @@ import os
 import subprocess
 import tempfile
 import uuid
+import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from time import sleep as real_sleep
@@ -16,11 +18,48 @@ from symnav_bench.cells.normalize import HarnessMeta, normalize_attempt
 from symnav_bench.run.config import RunConfig
 from symnav_bench.run.job_config import HarnessIdentity, build_job_yaml
 from symnav_bench.run.limits import find_limit_marker
+from symnav_bench.agent_integrations import AgentIntegrationBundle, SymnavIntegrationCatalog
+from symnav_bench.study import AgentConfiguration, StudyManifest
+from symnav_bench.suite import TaskManifestEntry
 
 
 PierRun = Callable[[Path, Path], None]
 Clock = Callable[[], datetime]
 Sleeper = Callable[[float], None]
+
+
+@dataclass(frozen=True)
+class StudyRunContext:
+    configuration: AgentConfiguration
+    tasks: dict[str, TaskManifestEntry]
+    integration: AgentIntegrationBundle
+    wall_clock_seconds: int
+    deep_swe_sha: str
+
+    @classmethod
+    def from_environment(cls) -> "StudyRunContext | None":
+        manifest_path = os.environ.get("SYMNAV_BENCH_STUDY_MANIFEST")
+        suite_path = os.environ.get("SYMNAV_BENCH_SUITE_MANIFEST")
+        symnav_checkout = os.environ.get("SYMNAV_BENCH_SYMNAV_CHECKOUT")
+        configuration_id = os.environ.get("SYMNAV_BENCH_CONFIGURATION_ID")
+        if not all((manifest_path, suite_path, symnav_checkout, configuration_id)):
+            return None
+        study = StudyManifest.load(Path(manifest_path))
+        configuration = next(
+            item for item in study.configurations if item.id == configuration_id
+        )
+        suite_data = json.loads(Path(suite_path).read_text(encoding="utf-8"))
+        tasks = {
+            item["slug"]: TaskManifestEntry(**item)
+            for item in suite_data["tasks"]
+        }
+        return cls(
+            configuration=configuration,
+            tasks=tasks,
+            integration=SymnavIntegrationCatalog.load(Path(symnav_checkout)).bundle("full"),
+            wall_clock_seconds=study.protocol.wall_clock_seconds,
+            deep_swe_sha=study.protocol.deep_swe_sha,
+        )
 
 
 class CellRunner:
@@ -31,12 +70,14 @@ class CellRunner:
         pier: PierRun,
         clock: Clock | None = None,
         sleeper: Sleeper | None = None,
+        study_context: StudyRunContext | None = None,
     ) -> None:
         self.config = config
         self.harness = harness
         self.pier = pier
         self.clock = clock or (lambda: datetime.now(UTC))
         self.sleep = sleeper or real_sleep
+        self.study_context = study_context
 
     @classmethod
     def from_environment(
@@ -56,6 +97,7 @@ class CellRunner:
                 symnav_ref=symnav_ref,
             ),
             pier=pier,
+            study_context=StudyRunContext.from_environment(),
         )
 
     def run_all(self) -> list[AttemptRecord]:
@@ -65,8 +107,17 @@ class CellRunner:
         jobs_dir = Path(tempfile.mkdtemp(prefix="symnav-bench-jobs-"))
         job_yaml = jobs_dir / "job.yaml"
         condition = next(c for c in self.config.conditions if c.label == identity.condition_label)
+        configuration = self.study_context.configuration if self.study_context else identity.spec
+        task = self.study_context.tasks[identity.task] if self.study_context else identity.task
         job_yaml.write_text(
-            build_job_yaml(identity.spec, condition, identity.task, self.config.tasks_dir),
+            build_job_yaml(
+                configuration,
+                condition,
+                task,
+                self.config.tasks_dir,
+                self.study_context.integration if self.study_context else None,
+                self.study_context.wall_clock_seconds if self.study_context else None,
+            ),
             encoding="utf-8",
         )
         pier_error = None
@@ -110,18 +161,20 @@ class CellRunner:
     def _harness_identity(self, identity: CellIdentity) -> HarnessIdentity:
         if isinstance(self.harness, HarnessIdentity):
             return self.harness
+        context = self.study_context
+        treatment = identity.condition_label != "stock"
         return HarnessIdentity(
             image_reference=self.harness.image_version,
             image_digest=os.environ.get("SYMNAV_BENCH_IMAGE_DIGEST", "unknown"),
             symnav_bench_sha=os.environ.get("SYMNAV_BENCH_SHA", self.harness.image_version),
             pier_version=self.harness.pier_version,
-            deep_swe_sha=self.harness.deep_swe_ref,
+            deep_swe_sha=context.deep_swe_sha if context else self.harness.deep_swe_ref,
             symnav_sha=self.harness.symnav_ref,
             agent_name=identity.spec.agent,
-            agent_version=os.environ.get(f"{identity.spec.agent.upper()}_VERSION", "unknown"),
-            bundle_id=None,
-            bundle_hash=None,
-            task_checksum="unknown",
+            agent_version=context.configuration.agent_version if context else os.environ.get(f"{identity.spec.agent.upper()}_VERSION", "unknown"),
+            bundle_id=context.integration.id if context and treatment else None,
+            bundle_hash=context.integration.content_hash if context and treatment else None,
+            task_checksum=context.tasks[identity.task].checksum if context else "unknown",
             prompt_rule_hash="unknown",
             requested_model=identity.spec.model,
             requested_effort=identity.spec.effort,
