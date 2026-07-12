@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from itertools import product
 from random import Random
 from statistics import mean
 
@@ -70,15 +72,23 @@ def compare_condition_to_stock(
         if complete and point is not None
         else None
     )
+    randomization_p_value = (
+        _paired_randomization(task_deltas, randomization_samples, seed)
+        if uplift is not None
+        else None
+    )
+    demonstrated_improvement = uplift is not None and uplift.lower_95 > 0
     return ConditionComparison(
         configuration_id=_comparison_id(treatment),
         stock=stock,
         treatment=treatment,
         task_deltas=task_deltas,
         uplift=uplift,
-        randomization_p_value=None,
-        demonstrated_improvement=False,
-        material_improvement=False,
+        randomization_p_value=randomization_p_value,
+        demonstrated_improvement=demonstrated_improvement,
+        material_improvement=(
+            demonstrated_improvement and uplift.value >= practical_threshold
+        ),
         wins=sum(task.delta > 0 for task in task_deltas),
         ties=sum(task.delta == 0 for task in task_deltas),
         losses=sum(task.delta < 0 for task in task_deltas),
@@ -151,3 +161,41 @@ def _percentile(values: list[float], quantile: float) -> float:
     upper_index = min(lower_index + 1, len(values) - 1)
     fraction = position - lower_index
     return values[lower_index] + (values[upper_index] - values[lower_index]) * fraction
+
+
+def _paired_randomization(
+    task_deltas: tuple[TaskDelta, ...],
+    samples: int,
+    seed: int,
+) -> float:
+    if samples <= 0:
+        raise ValueError("randomization_samples must be positive")
+    values = [task.delta for task in task_deltas]
+    exact_permutations = 2 ** len(values)
+    if exact_permutations <= samples:
+        randomized = (
+            mean(sign * value for sign, value in zip(signs, values, strict=True))
+            for signs in product((-1, 1), repeat=len(values))
+        )
+        return _extreme_fraction(randomized, exact_permutations, values)
+    random = Random(seed)
+    randomized = (
+        mean(random.choice((-1, 1)) * value for value in values)
+        for _ in range(samples)
+    )
+    extreme = _extreme_count(randomized, values)
+    return (extreme + 1) / (samples + 1)
+
+
+def _extreme_fraction(
+    randomized: Iterable[float],
+    count: int,
+    values: list[float],
+) -> float:
+    return _extreme_count(randomized, values) / count
+
+
+def _extreme_count(randomized: Iterable[float], values: list[float]) -> int:
+    observed = abs(mean(values))
+    tolerance = 1e-12
+    return sum(abs(value) + tolerance >= observed for value in randomized)
