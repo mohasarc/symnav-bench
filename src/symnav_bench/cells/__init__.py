@@ -5,6 +5,7 @@ from symnav_bench.cells.attempt import (
     AttemptRecord,
     SlotResult,
     classify_attempt,
+    select_slot_result,
 )
 from symnav_bench.cells.cell import CELL_SCHEMA_VERSION, Cell
 from symnav_bench.cells.normalize import HarnessMeta, normalize_attempt, normalize_trial
@@ -21,4 +22,5 @@ __all__ = [
     "classify_attempt",
     "normalize_attempt",
     "normalize_trial",
+    "select_slot_result",
 ]

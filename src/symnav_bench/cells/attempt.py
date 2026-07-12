@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Literal, Mapping, cast
+from typing import Any, Literal, Mapping, Sequence, cast
 
 from symnav_bench.batch_plan import TrialSlot
 from symnav_bench.run.job_config import HarnessIdentity
@@ -83,6 +83,31 @@ class SlotResult:
     scored_attempt: AttemptRecord | None
     attempts: tuple[AttemptRecord, ...]
     warnings: tuple[str, ...]
+
+
+def select_slot_result(
+    slot: TrialSlot,
+    attempts: Sequence[AttemptRecord],
+) -> SlotResult:
+    mismatched = [attempt.identity.attempt_id for attempt in attempts if attempt.slot.slot_id != slot.slot_id]
+    if mismatched:
+        raise ValueError(f"attempts do not belong to slot {slot.slot_id}: {', '.join(mismatched)}")
+    ordered = tuple(sorted(attempts, key=lambda attempt: (attempt.written_at, attempt.identity.attempt_id)))
+    scored = [attempt for attempt in ordered if attempt.disposition.outcome != "retryable_error"]
+    selected = scored[0] if scored else None
+    warnings = ()
+    if selected is not None and len(scored) > 1:
+        warnings = tuple(
+            f"slot {slot.slot_id} has multiple scored attempts; "
+            f"keeping {selected.identity.attempt_id} and ignoring {duplicate.identity.attempt_id}"
+            for duplicate in scored[1:]
+        )
+    return SlotResult(
+        slot=slot,
+        scored_attempt=selected,
+        attempts=ordered,
+        warnings=warnings,
+    )
 
 
 def classify_attempt(
