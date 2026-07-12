@@ -5,12 +5,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import yaml
 from pathlib import PurePosixPath
+from types import SimpleNamespace
 
 from symnav_bench.agent_integrations import AgentIntegrationBundle, IntegrationFile
 from symnav_bench.run.auth import validate_auth
 from symnav_bench.cli import run_exit_code
 from symnav_bench.cell_identity import CellIdentity
-from symnav_bench.cells.cell import Cell
+from symnav_bench.cells.attempt import AttemptDisposition
 from symnav_bench.run.config import RunConfig
 from symnav_bench.run.job_config import HarnessIdentity, build_job_yaml
 from symnav_bench.run.limits import next_backoff, parse_limit_reset
@@ -254,24 +255,23 @@ def test_find_trial_dir_ignores_job_result(tmp_path) -> None:
     assert find_trial_dir(tmp_path) == trial_dir
 
 
-def test_run_exit_code_fails_when_a_cell_errors() -> None:
-    assert run_exit_code([_cell("completed")]) == 0
-    assert run_exit_code([_cell("completed"), _cell("error")]) == 1
+def test_run_exit_code_fails_only_for_retryable_attempts() -> None:
+    passed = _attempt_with_outcome("passed")
+    failed = _attempt_with_outcome("failed")
+    retryable = _attempt_with_outcome("retryable_error")
+
+    assert run_exit_code([passed, failed]) == 0
+    assert run_exit_code([passed, retryable]) == 1
 
 
-def _cell(status):
-    return Cell(
-        identity=CellIdentity(AgentSpec("codex", "m", "e"), "stock", "task", 0),
-        status=status,
-        error=None,
-        solved=False,
-        rewards={},
-        usage={},
-        timing={},
-        agent_version=None,
-        harness={},
-        command_counts={},
+def _attempt_with_outcome(outcome):
+    disposition = AttemptDisposition(
+        outcome=outcome,
+        scored_failure_reason="verifier" if outcome == "failed" else None,
+        retry_reason="quota" if outcome == "retryable_error" else None,
+        detail=None,
     )
+    return SimpleNamespace(disposition=disposition)
 
 
 def _harness():

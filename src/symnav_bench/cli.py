@@ -11,7 +11,7 @@ from typing import TextIO
 
 from symnav_bench.build_identity import build_version_text
 from symnav_bench.batch_plan import BatchPlan, TrialSlot, plan_balanced_batches, plan_trial_slots
-from symnav_bench.cells.cell import Cell
+from symnav_bench.cells.attempt import AttemptRecord
 from symnav_bench.deepswe import TASK_SLUGS, configured_tasks_dir, ensure_deepswe_tasks
 from symnav_bench.run.auth import validate_auth
 from symnav_bench.run.config import RunConfig
@@ -209,8 +209,8 @@ def split_csv(value: str) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
-def run_exit_code(cells: list[Cell]) -> int:
-    return 1 if any(cell.status == "error" for cell in cells) else 0
+def run_exit_code(attempts: list[AttemptRecord]) -> int:
+    return 1 if any(attempt.disposition.outcome == "retryable_error" for attempt in attempts) else 0
 
 
 if __name__ == "__main__":
