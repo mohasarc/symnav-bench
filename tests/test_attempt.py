@@ -2,7 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from symnav_bench.cells.attempt import classify_attempt
+from symnav_bench.batch_plan import TrialSlot
+from symnav_bench.cells.attempt import (
+    ATTEMPT_SCHEMA_VERSION,
+    AttemptDisposition,
+    AttemptIdentity,
+    AttemptRecord,
+    classify_attempt,
+    select_slot_result,
+)
+from symnav_bench.run.job_config import HarnessIdentity
 
 
 def test_binary_verifier_reward_defines_pass_or_failure() -> None:
@@ -67,6 +76,29 @@ def test_trial_presence_does_not_override_structured_exception() -> None:
     assert disposition.retry_reason == "quota"
 
 
+def test_slot_selects_first_scored_attempt_and_keeps_retry_history() -> None:
+    slot = _slot()
+    retry = _attempt(slot, "attempt-1", "retryable_error")
+    first_scored = _attempt(slot, "attempt-2", "failed")
+    duplicate_scored = _attempt(slot, "attempt-3", "passed")
+
+    result = select_slot_result(slot, [duplicate_scored, first_scored, retry])
+
+    assert result.attempts == (retry, first_scored, duplicate_scored)
+    assert result.scored_attempt == first_scored
+    assert result.warnings == (
+        f"slot {slot.slot_id} has multiple scored attempts; keeping attempt-2 and ignoring attempt-3",
+    )
+
+
+def test_missing_slot_stays_unresolved() -> None:
+    result = select_slot_result(_slot(), [])
+
+    assert result.scored_attempt is None
+    assert result.attempts == ()
+    assert result.warnings == ()
+
+
 def _result(
     rewards: dict[str, float] | None = None,
     exception_type: str | None = None,
@@ -80,3 +112,44 @@ def _result(
             "message": exception_type,
         }
     return result
+
+
+def _slot() -> TrialSlot:
+    return TrialSlot("study", "configuration", "stock", "task", 1, "slot-1")
+
+
+def _attempt(slot: TrialSlot, attempt_id: str, outcome: str) -> AttemptRecord:
+    return AttemptRecord(
+        schema_version=ATTEMPT_SCHEMA_VERSION,
+        identity=AttemptIdentity(slot.slot_id, attempt_id, None, None, None),
+        slot=slot,
+        disposition=AttemptDisposition(
+            outcome=outcome,
+            scored_failure_reason="verifier" if outcome == "failed" else None,
+            retry_reason="unknown" if outcome == "retryable_error" else None,
+            detail=None,
+        ),
+        rewards={},
+        usage={},
+        timing={},
+        agent_version=None,
+        harness=HarnessIdentity(
+            "image",
+            "sha256:image",
+            "a" * 40,
+            "0.3.0",
+            "b" * 40,
+            None,
+            "codex",
+            "0.31.0",
+            None,
+            None,
+            "c" * 64,
+            "d" * 64,
+            "model",
+            "medium",
+        ),
+        exception=None,
+        command_counts={},
+        written_at=f"2026-01-01T00:00:0{attempt_id[-1]}+00:00",
+    )

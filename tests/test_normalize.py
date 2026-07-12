@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 
+from symnav_bench.batch_plan import TrialSlot
 from symnav_bench.cell_identity import CellIdentity
+from symnav_bench.cells.attempt import AttemptIdentity, AttemptRecord
 from symnav_bench.cells.cell import Cell
-from symnav_bench.cells.normalize import HarnessMeta, normalize_trial
+from symnav_bench.cells.normalize import HarnessMeta, normalize_attempt, normalize_trial
+from symnav_bench.run.job_config import HarnessIdentity
 from symnav_bench.run_spec import AgentSpec
 
 
@@ -158,3 +161,63 @@ def test_missing_trial_becomes_error(tmp_path) -> None:
     cell = normalize_trial(None, identity, HarnessMeta("image", "pier", "deep", None), "completed", None, tmp_path)
     assert cell.status == "error"
     assert cell.error == "missing or empty trial result"
+
+
+def test_normalize_attempt_appends_unique_attempts_and_preserves_raw_files(tmp_path) -> None:
+    slot = TrialSlot("study", "configuration", "stock", "task", 1, "slot-1")
+    trial = tmp_path / "trial"
+    (trial / "agent").mkdir(parents=True)
+    (trial / "result.json").write_text(
+        json.dumps({"verifier_result": {"rewards": {"f2p": 1.0, "p2p": 1.0}}}),
+        encoding="utf-8",
+    )
+    (trial / "trial.log").write_text("first", encoding="utf-8")
+    first_identity = AttemptIdentity(slot.slot_id, "attempt-1", "123", 2, "run-stock")
+
+    first = normalize_attempt(trial, slot, first_identity, _harness_identity(), None, tmp_path / "out")
+    (trial / "trial.log").write_text("second", encoding="utf-8")
+    second_identity = AttemptIdentity(slot.slot_id, "attempt-2", "124", 1, "run-stock")
+    second = normalize_attempt(trial, slot, second_identity, _harness_identity(), None, tmp_path / "out")
+
+    first_dir = tmp_path / "out" / slot.slot_id / "attempts" / "attempt-1"
+    second_dir = tmp_path / "out" / slot.slot_id / "attempts" / "attempt-2"
+    assert AttemptRecord.load(first_dir / "attempt.json") == first
+    assert AttemptRecord.load(second_dir / "attempt.json") == second
+    assert (first_dir / "raw" / "trial.log").read_text(encoding="utf-8") == "first"
+    assert (second_dir / "raw" / "trial.log").read_text(encoding="utf-8") == "second"
+    assert first.identity.github_run_id == "123"
+    assert first.identity.github_run_attempt == 2
+    assert first.identity.github_job == "run-stock"
+
+
+def test_normalize_attempt_refuses_to_replace_an_existing_attempt(tmp_path) -> None:
+    slot = TrialSlot("study", "configuration", "stock", "task", 1, "slot-1")
+    identity = AttemptIdentity(slot.slot_id, "attempt-1", None, None, None)
+
+    normalize_attempt(None, slot, identity, _harness_identity(), RuntimeError("first"), tmp_path)
+
+    try:
+        normalize_attempt(None, slot, identity, _harness_identity(), RuntimeError("second"), tmp_path)
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("duplicate attempt ID replaced immutable attempt")
+
+
+def _harness_identity() -> HarnessIdentity:
+    return HarnessIdentity(
+        image_reference="image",
+        image_digest="sha256:image",
+        symnav_bench_sha="a" * 40,
+        pier_version="0.3.0",
+        deep_swe_sha="b" * 40,
+        symnav_sha=None,
+        agent_name="codex",
+        agent_version="0.31.0",
+        bundle_id=None,
+        bundle_hash=None,
+        task_checksum="c" * 64,
+        prompt_rule_hash="d" * 64,
+        requested_model="model",
+        requested_effort="medium",
+    )
