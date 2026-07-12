@@ -61,7 +61,6 @@ litellm==1.91.3
 loguru==0.7.3
 markdown-it-py==4.2.0
 MarkupSafe==3.0.3
-matplotlib==3.11.0
 mcp==1.28.1
 mdurl==0.1.2
 modal==1.5.2

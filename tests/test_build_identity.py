@@ -12,5 +12,5 @@ def test_build_version_reports_commit_image_and_dependency_versions(monkeypatch)
     assert f"bench_sha={'a' * 40}" in text
     assert "image=phase-3" in text
     assert "datacurve-pier=0.3.0" in text
-    assert "matplotlib=3.11.0" in text
+    assert "pyarrow=21.0.0" in text
     assert "PyYAML=6.0.3" in text

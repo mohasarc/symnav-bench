@@ -4,7 +4,7 @@ import os
 from importlib.metadata import PackageNotFoundError, version
 
 
-DEPENDENCIES = ("datacurve-pier", "matplotlib", "PyYAML")
+DEPENDENCIES = ("datacurve-pier", "pyarrow", "PyYAML")
 
 
 def build_version_text() -> str:
