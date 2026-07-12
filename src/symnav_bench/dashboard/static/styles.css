@@ -73,6 +73,20 @@ main { padding: 1.25rem max(2rem, 5vw) 4rem; }
 .version-timeline small { color: var(--muted); }
 .version-selectors { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
 .version-compare { margin-top: 0; }
+.reliability-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); margin-bottom: 1rem; }
+.coverage-card { border: 1px solid var(--line); border-radius: .8rem; padding: 1rem; }
+.coverage-card.complete { border-top: 4px solid var(--accent); }
+.coverage-card.provisional { border-top: 4px solid #f59f00; }
+.coverage-card h3 { font-size: 1rem; margin-top: 0; }
+.coverage-card progress { accent-color: var(--accent); width: 100%; }
+.reliability-grid + .inset, .reliability-grid + .inset + .inset { margin-bottom: 1rem; }
+.trial-controls { margin-bottom: 1rem; }
+.trial-controls label { color: var(--muted); display: grid; font-size: .75rem; font-weight: 700; gap: .3rem; max-width: 28rem; text-transform: uppercase; }
+.trial-controls input { background: var(--panel); border: 1px solid var(--line); border-radius: .5rem; color: var(--ink); font: inherit; padding: .65rem .8rem; text-transform: none; }
+.trial-table tbody tr { cursor: pointer; }
+.trial-table tbody tr:hover, .trial-table tbody tr:focus { background: var(--accent-soft); outline: 2px solid var(--accent); }
+.legacy-notice { background: #fff4d6; border: 1px solid #e9c46a; border-radius: .8rem; max-width: 54rem; padding: 1.25rem; }
+.legacy-notice a { color: #725500; font-weight: 700; }
 .hint { color: var(--muted); font-size: .9rem; }
 .heatmap { border-collapse: separate; border-spacing: 3px; display: block; max-height: 68vh; overflow: auto; width: 100%; }
 .heatmap th { background: var(--panel); font-size: .72rem; max-width: 14rem; padding: .5rem; position: sticky; text-align: left; top: 0; z-index: 2; }

@@ -60,10 +60,186 @@ function render() {
     renderVersions(document.querySelector("#view-content"));
     return;
   }
+  if (state.view === "reliability") {
+    renderReliability(document.querySelector("#view-content"));
+    return;
+  }
+  if (state.view === "trials") {
+    renderTrials(document.querySelector("#view-content"));
+    return;
+  }
+  if (state.view === "legacy") {
+    renderLegacy(document.querySelector("#view-content"));
+    return;
+  }
   document.querySelector("#view-content").replaceChildren(
     Object.assign(document.createElement("p"), {
       textContent: `${taskRows.length} task rows match current filters`,
     }),
+  );
+}
+
+function renderReliability(container) {
+  const configurations = payload.configurations.filter(
+    (item) =>
+      (state.configurationId === "all" || item.id === state.configurationId) &&
+      (state.condition === "all" || item.condition === state.condition),
+  );
+  const cards = document.createElement("div");
+  cards.className = "reliability-grid";
+  for (const item of configurations) {
+    const coverage = item.coverage;
+    const card = document.createElement("article");
+    card.className = coverage.pilot || coverage.provisional ? "coverage-card provisional" : "coverage-card complete";
+    const heading = document.createElement("h3");
+    heading.textContent = item.label;
+    const progress = document.createElement("progress");
+    progress.max = coverage.planned_slots;
+    progress.value = coverage.scored_slots;
+    progress.textContent = `${coverage.scored_slots}/${coverage.planned_slots}`;
+    card.append(
+      heading,
+      progress,
+      definitionList({
+        status: coverage.pilot ? "Pilot" : coverage.provisional ? "Provisional" : "Complete",
+        scored_slots: `${coverage.scored_slots}/${coverage.planned_slots}`,
+        complete_tasks: `${coverage.complete_tasks}/${coverage.total_tasks}`,
+        retryable_attempts: coverage.retryable_attempts,
+        unresolved_slots: coverage.unresolved_slot_ids.length,
+      }),
+    );
+    cards.append(card);
+  }
+  const retries = filteredAttempts().filter((attempt) => attempt.outcome === "retryable_error");
+  const retrySection = document.createElement("section");
+  retrySection.className = "inset";
+  const retryHeading = document.createElement("h3");
+  retryHeading.textContent = "Retry history";
+  retrySection.append(retryHeading);
+  retrySection.append(
+    retries.length
+      ? dataTable(
+          ["Task", "Condition", "Rep", "Reason", "Attempt", "Recorded"],
+          retries.map((attempt) => [
+            attempt.task,
+            attempt.condition,
+            attempt.repetition,
+            attempt.retry_reason ?? "unknown",
+            attempt.attempt_id,
+            attempt.written_at ?? "—",
+          ]),
+        )
+      : emptyState("No retryable infrastructure or provider attempts were recorded."),
+  );
+  const warnings = document.createElement("section");
+  warnings.className = "inset";
+  const warningHeading = document.createElement("h3");
+  warningHeading.textContent = "Analysis warnings";
+  warnings.append(warningHeading);
+  if (!payload.warnings.length) {
+    warnings.append(emptyState("No compatibility or duplicate-attempt warnings."));
+  } else {
+    const list = document.createElement("ul");
+    for (const warning of payload.warnings) {
+      const item = document.createElement("li");
+      item.textContent = warning;
+      list.append(item);
+    }
+    warnings.append(list);
+  }
+  container.replaceChildren(cards, retrySection, warnings);
+}
+
+function renderTrials(container) {
+  const controls = document.createElement("div");
+  controls.className = "trial-controls";
+  const label = document.createElement("label");
+  label.textContent = "Filter task or attempt";
+  const search = document.createElement("input");
+  search.type = "search";
+  search.placeholder = "Type to filter…";
+  search.value = state.trialQuery ?? "";
+  label.append(search);
+  controls.append(label);
+  const tableContainer = document.createElement("div");
+  const update = () => {
+    state.trialQuery = search.value;
+    const query = search.value.trim().toLowerCase();
+    const attempts = filteredAttempts().filter(
+      (attempt) =>
+        !query ||
+        attempt.task.toLowerCase().includes(query) ||
+        attempt.attempt_id.toLowerCase().includes(query),
+    );
+    tableContainer.replaceChildren(trialTable(attempts));
+  };
+  search.addEventListener("input", update);
+  container.replaceChildren(controls, tableContainer);
+  update();
+}
+
+function trialTable(attempts) {
+  if (!attempts.length) return emptyState("No attempts match current filters.");
+  const table = document.createElement("table");
+  table.className = "data-table trial-table";
+  const head = table.createTHead().insertRow();
+  for (const value of ["Task", "Condition", "Rep", "Outcome", "Cost", "Tokens", "Steps", "Duration", "Attempt"]) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = value;
+    head.append(cell);
+  }
+  const body = table.createTBody();
+  for (const attempt of attempts) {
+    const row = body.insertRow();
+    const values = [
+      attempt.task,
+      attempt.condition,
+      attempt.repetition,
+      attempt.outcome,
+      attempt.usage.cost_usd_imputed == null ? "—" : `$${Number(attempt.usage.cost_usd_imputed).toFixed(2)}`,
+      attempt.usage.n_output_tokens ?? "—",
+      attempt.usage.n_agent_steps ?? "—",
+      attempt.timing.duration_seconds ?? attempt.timing.total_seconds ?? "—",
+      attempt.attempt_id,
+    ];
+    for (const value of values) row.insertCell().textContent = String(value);
+    const taskRow = payload.tasks.find(
+      (item) =>
+        item.configuration_id === attempt.configuration_id &&
+        item.condition === attempt.condition &&
+        item.task === attempt.task,
+    );
+    if (taskRow) {
+      row.tabIndex = 0;
+      row.addEventListener("click", () => openDrawer(taskRow));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") openDrawer(taskRow);
+      });
+    }
+  }
+  return table;
+}
+
+function renderLegacy(container) {
+  const explanation = document.createElement("div");
+  explanation.className = "legacy-notice";
+  const heading = document.createElement("h3");
+  heading.textContent = "Legacy benchmark cells stay separate";
+  const text = document.createElement("p");
+  text.textContent = "Unmanifested historical cells remain available for audit, but never enter study coverage, scores, paired comparisons, or version evidence.";
+  const link = document.createElement("a");
+  link.href = "./legacy-cells.csv";
+  link.textContent = "Open legacy CSV when published with this study";
+  explanation.append(heading, text, link);
+  container.replaceChildren(explanation);
+}
+
+function filteredAttempts() {
+  return payload.attempts.filter(
+    (attempt) =>
+      (state.configurationId === "all" || attempt.configuration_id === state.configurationId) &&
+      (state.condition === "all" || attempt.condition === state.condition),
   );
 }
 
