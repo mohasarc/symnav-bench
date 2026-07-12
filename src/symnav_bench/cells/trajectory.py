@@ -17,6 +17,7 @@ TIMEOUT_MARKERS: tuple[str, ...] = (
 )
 
 MAX_COMMAND_OUTPUT_CHARS = 200_000
+TOOL_EVENT_SCHEMA_VERSION = 1
 
 
 ToolEventKind = Literal["shell", "read", "search", "patch", "skill", "other"]
@@ -216,6 +217,15 @@ def write_commands_jsonl(commands: list[ExecutedCommand], path: Path) -> None:
         for command in commands:
             row = asdict(command)
             row["tags"] = list(command.tags)
+            stream.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def write_tool_events_jsonl(events: Sequence[NormalizedToolEvent], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as stream:
+        for event in events:
+            row = {"schema_version": TOOL_EVENT_SCHEMA_VERSION, **asdict(event)}
+            row["tags"] = list(event.tags)
             stream.write(json.dumps(row, sort_keys=True) + "\n")
 
 

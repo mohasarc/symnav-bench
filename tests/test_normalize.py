@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from symnav_bench.batch_plan import TrialSlot
 from symnav_bench.cell_identity import CellIdentity
@@ -9,6 +10,9 @@ from symnav_bench.cells.cell import Cell
 from symnav_bench.cells.normalize import HarnessMeta, normalize_attempt, normalize_trial
 from symnav_bench.run.job_config import HarnessIdentity
 from symnav_bench.run_spec import AgentSpec
+
+
+TRAJECTORY_FIXTURES = Path(__file__).parent / "fixtures" / "trajectories"
 
 
 def test_normalize_trial_writes_cell_and_commands(tmp_path) -> None:
@@ -188,6 +192,10 @@ def test_normalize_attempt_appends_unique_attempts_and_preserves_raw_files(tmp_p
     assert first.identity.github_run_id == "123"
     assert first.identity.github_run_attempt == 2
     assert first.identity.github_job == "run-stock"
+    assert first.adoption.used_symnav is False
+    tool_events = first_dir / "tool-events.jsonl"
+    assert tool_events.is_file()
+    assert not (first_dir / "commands.jsonl").exists()
 
 
 def test_normalize_attempt_refuses_to_replace_an_existing_attempt(tmp_path) -> None:
@@ -202,6 +210,40 @@ def test_normalize_attempt_refuses_to_replace_an_existing_attempt(tmp_path) -> N
         pass
     else:
         raise AssertionError("duplicate attempt ID replaced immutable attempt")
+
+
+def test_normalize_attempt_reprocesses_nested_terra_trajectory(tmp_path) -> None:
+    slot = TrialSlot("study", "configuration", "symnav", "task", 1, "slot-terra")
+    trial = tmp_path / "trial"
+    (trial / "agent").mkdir(parents=True)
+    (trial / "result.json").write_text(
+        json.dumps(
+            {
+                "agent_result": {"n_agent_steps": 10},
+                "verifier_result": {"rewards": {"f2p": 1.0}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (trial / "agent" / "trajectory.json").write_text(
+        (TRAJECTORY_FIXTURES / "terra_nested_exec.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    identity = AttemptIdentity(slot.slot_id, "attempt-terra", None, None, None)
+
+    attempt = normalize_attempt(trial, slot, identity, _harness_identity(), None, tmp_path / "out")
+
+    assert attempt.adoption.symnav_calls == 1
+    assert attempt.adoption.search_calls == 1
+    assert attempt.adoption.read_calls == 1
+    event_rows = [
+        json.loads(line)
+        for line in (
+            tmp_path / "out" / slot.slot_id / "attempts" / identity.attempt_id / "tool-events.jsonl"
+        ).read_text(encoding="utf-8").splitlines()
+    ]
+    assert event_rows[0]["schema_version"] == 1
+    assert event_rows[0]["outer_tool"] == "exec"
 
 
 def _harness_identity() -> HarnessIdentity:

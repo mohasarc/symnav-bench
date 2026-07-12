@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Any, Literal, Mapping, Sequence, cast
 
 from symnav_bench.batch_plan import TrialSlot
+from symnav_bench.cells.trajectory import AdoptionSummary
 from symnav_bench.run.job_config import HarnessIdentity
 
 
-ATTEMPT_SCHEMA_VERSION = 2
+ATTEMPT_SCHEMA_VERSION = 3
 AttemptOutcome = Literal["passed", "failed", "retryable_error"]
 ScoredFailureReason = Literal["verifier", "context_window", "agent_timeout"]
 RetryReason = Literal[
@@ -53,6 +54,7 @@ class AttemptRecord:
     harness: HarnessIdentity
     exception: dict[str, Any] | None
     command_counts: dict[str, Any]
+    adoption: AdoptionSummary
     written_at: str
 
     @classmethod
@@ -70,11 +72,41 @@ class AttemptRecord:
             harness=HarnessIdentity(**data["harness"]),
             exception=data.get("exception"),
             command_counts=dict(data.get("command_counts", {})),
+            adoption=_load_adoption(data.get("adoption")),
             written_at=str(data["written_at"]),
         )
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _load_adoption(value: Any) -> AdoptionSummary:
+    if isinstance(value, Mapping):
+        return AdoptionSummary(
+            used_symnav=bool(value.get("used_symnav", False)),
+            read_symnav_skill=bool(value.get("read_symnav_skill", False)),
+            symnav_calls=int(value.get("symnav_calls", 0)),
+            symnav_calls_per_agent_step=float(value.get("symnav_calls_per_agent_step", 0.0)),
+            symnav_failures=int(value.get("symnav_failures", 0)),
+            symnav_timeouts=int(value.get("symnav_timeouts", 0)),
+            first_symnav_step=(
+                int(value["first_symnav_step"])
+                if value.get("first_symnav_step") is not None
+                else None
+            ),
+            search_calls=int(value.get("search_calls", 0)),
+            read_calls=int(value.get("read_calls", 0)),
+            patch_calls=int(value.get("patch_calls", 0)),
+            command_counts={
+                str(command): int(count)
+                for command, count in _mapping(value.get("command_counts")).items()
+            },
+        )
+    return AdoptionSummary(False, False, 0, 0.0, 0, 0, None, 0, 0, 0, {})
+
+
+def _mapping(value: Any) -> Mapping[Any, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 @dataclass(frozen=True)

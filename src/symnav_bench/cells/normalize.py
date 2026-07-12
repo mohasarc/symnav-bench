@@ -17,7 +17,14 @@ from symnav_bench.cells.attempt import (
     classify_attempt,
 )
 from symnav_bench.cells.cell import Cell, CellStatus
-from symnav_bench.cells.trajectory import ExecutedCommand, extract_commands, write_commands_jsonl
+from symnav_bench.cells.trajectory import (
+    ExecutedCommand,
+    extract_commands,
+    extract_tool_events,
+    summarize_adoption,
+    write_commands_jsonl,
+    write_tool_events_jsonl,
+)
 from symnav_bench.run.job_config import HarnessIdentity
 
 
@@ -51,8 +58,8 @@ def normalize_attempt(
     attempt_dir.mkdir(parents=True, exist_ok=False)
     result = _read_json(trial_dir / "result.json") if trial_dir else {}
     trajectory = _read_json(trial_dir / "agent" / "trajectory.json") if trial_dir else {}
-    commands = extract_commands(trajectory)
-    write_commands_jsonl(commands, attempt_dir / "commands.jsonl")
+    events = extract_tool_events(trajectory)
+    write_tool_events_jsonl(events, attempt_dir / "tool-events.jsonl")
     if trial_dir:
         _copy_raw_trial_files(trial_dir, attempt_dir / "raw")
         _copy_captured_workspace_artifacts(trial_dir, attempt_dir / "raw" / "workspace")
@@ -68,7 +75,8 @@ def normalize_attempt(
         agent_version=_agent_version(result),
         harness=harness,
         exception=_exception(result, pier_error),
-        command_counts=_command_counts(commands),
+        command_counts=_command_counts(events),
+        adoption=summarize_adoption(events, _agent_steps(result)),
         written_at=datetime.now(UTC).isoformat(),
     )
     (attempt_dir / "attempt.json").write_text(
@@ -257,6 +265,11 @@ def _agent_version(result: dict[str, Any]) -> str | None:
         return None
     version = agent_info.get("version")
     return str(version) if version is not None else None
+
+
+def _agent_steps(result: dict[str, Any]) -> int | None:
+    value = _usage(result).get("n_agent_steps")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _exception(

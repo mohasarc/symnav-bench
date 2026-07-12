@@ -11,6 +11,7 @@ from symnav_bench.cells.attempt import (
     classify_attempt,
     select_slot_result,
 )
+from symnav_bench.cells.trajectory import AdoptionSummary
 from symnav_bench.run.job_config import HarnessIdentity
 
 
@@ -151,5 +152,6 @@ def _attempt(slot: TrialSlot, attempt_id: str, outcome: str) -> AttemptRecord:
         ),
         exception=None,
         command_counts={},
+        adoption=AdoptionSummary(False, False, 0, 0.0, 0, 0, None, 0, 0, 0, {}),
         written_at=f"2026-01-01T00:00:0{attempt_id[-1]}+00:00",
     )
