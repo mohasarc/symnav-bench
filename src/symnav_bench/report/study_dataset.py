@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from statistics import mean, median
 from typing import Any, cast
@@ -244,7 +244,19 @@ class LegacyDataset:
 
 
 def import_legacy_cells(cells_dir: Path) -> LegacyDataset:
-    raise NotImplementedError
+    cells: list[Cell] = []
+    warnings: list[str] = []
+    for path in sorted(cells_dir.glob("*/cell.json")):
+        cell = Cell.load(path)
+        solved = _legacy_binary_reward(cell) == 1.0
+        normalized = replace(cell, solved=solved)
+        cells.append(normalized)
+        missing = _missing_legacy_metadata(normalized)
+        if missing:
+            warnings.append(
+                f"{normalized.identity.dirname()} missing metadata: {', '.join(missing)}"
+            )
+    return LegacyDataset(cells=tuple(cells), warnings=tuple(warnings))
 
 
 def _load_suite_manifest(path: Path) -> SuiteManifest:
@@ -590,3 +602,21 @@ def _macro_adoption(summaries: list[AdoptionSummary]) -> AdoptionSummary | None:
             for command in command_names
         },
     )
+
+
+def _legacy_binary_reward(cell: Cell) -> float | None:
+    reward = _number(cell.rewards.get("reward"))
+    if reward is not None:
+        return reward
+    return _number(cell.rewards.get("f2p"))
+
+
+def _missing_legacy_metadata(cell: Cell) -> list[str]:
+    missing: list[str] = []
+    if cell.agent_version is None:
+        missing.append("agent_version")
+    if not cell.harness:
+        missing.append("harness")
+    if cell.written_at is None:
+        missing.append("written_at")
+    return missing
