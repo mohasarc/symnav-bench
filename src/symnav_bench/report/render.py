@@ -6,6 +6,7 @@ from pathlib import Path
 from symnav_bench.report.dashboard_payload import build_dashboard_payload
 from symnav_bench.report.dashboard_writer import StaticDashboardWriter
 from symnav_bench.report.exports import AnalysisExportWriter
+from symnav_bench.report.report_inputs import load_report_inputs
 from symnav_bench.report.statistics import ConditionComparison
 from symnav_bench.report.statistics import compare_condition_to_stock
 from symnav_bench.report.study_dataset import (
@@ -14,6 +15,8 @@ from symnav_bench.report.study_dataset import (
     StudyDataset,
     compute_configuration_metrics,
 )
+from symnav_bench.report.versions import VersionComparison
+from symnav_bench.report.versions import compare_study_versions
 
 
 def write_report(dataset: StudyDataset | LegacyDataset, out_dir: Path) -> None:
@@ -26,12 +29,18 @@ def write_report(dataset: StudyDataset | LegacyDataset, out_dir: Path) -> None:
         for key in dataset.configurations()
     ]
     comparisons = _condition_comparisons(dataset, metrics)
+    inputs = load_report_inputs(dataset)
+    versions = _version_comparisons(
+        dataset,
+        comparisons,
+        inputs.compatible_studies,
+    )
     payload = build_dashboard_payload(
         dataset,
         metrics,
         comparisons,
-        (),
-        None,
+        versions,
+        inputs.official_reference,
     )
     StaticDashboardWriter().write(payload, out_dir)
     exports = AnalysisExportWriter()
@@ -75,6 +84,50 @@ def _condition_comparisons(
                 )
             )
     return tuple(comparisons)
+
+
+def _version_comparisons(
+    dataset: StudyDataset,
+    current: tuple[ConditionComparison, ...],
+    compatible_studies: tuple[StudyDataset, ...],
+) -> tuple[VersionComparison, ...]:
+    versions: list[VersionComparison] = []
+    for compatible in compatible_studies:
+        metrics = [
+            compute_configuration_metrics(compatible, key)
+            for key in compatible.configurations()
+        ]
+        previous = _condition_comparisons(compatible, metrics)
+        for left in previous:
+            right = next(
+                (
+                    item
+                    for item in current
+                    if _comparison_identity(item) == _comparison_identity(left)
+                ),
+                None,
+            )
+            if left.uplift is None or right is None or right.uplift is None:
+                continue
+            versions.append(
+                compare_study_versions(
+                    left,
+                    right,
+                    seed=dataset.manifest.protocol.randomization_seed,
+                )
+            )
+    return tuple(versions)
+
+
+def _comparison_identity(comparison: ConditionComparison) -> tuple[str, ...]:
+    key = comparison.treatment.key
+    return (
+        key.agent,
+        key.model,
+        key.effort,
+        key.agent_version,
+        key.condition,
+    )
 
 
 def _write_legacy_report(dataset: LegacyDataset, out_dir: Path) -> None:

@@ -88,6 +88,7 @@ class StudyDataset:
     suite: SuiteManifest
     slots: tuple[SlotResult, ...]
     warnings: tuple[str, ...]
+    source_dir: Path | None = None
 
     @classmethod
     def load(cls, study_dir: Path) -> StudyDataset:
@@ -137,6 +138,7 @@ class StudyDataset:
             suite=suite,
             slots=results,
             warnings=tuple(warnings),
+            source_dir=study_dir,
         )
 
     def configurations(self) -> dict[ConfigurationKey, tuple[SlotResult, ...]]:

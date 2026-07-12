@@ -328,6 +328,64 @@ def test_study_report_carries_archived_attempt_into_trial_drawer_payload(
     assert "https://example.test/batch.tar.gz" in html
 
 
+def test_study_report_loads_pinned_official_reference(tmp_path: Path) -> None:
+    study_dir = write_study_directory(tmp_path / "study")
+    outcomes = {"task": ["passed"] * 4}
+    write_metric_attempts(study_dir, outcomes, outcomes)
+    official_checksum = write_official_reference(study_dir)
+
+    write_report(StudyDataset.load(study_dir), tmp_path / "report")
+
+    payload = json.loads((tmp_path / "report" / "analysis-v1.json").read_text())
+    assert payload["official_references"] == [
+        {
+            "model": "model",
+            "effort": "medium",
+            "task_scores": {"task": 0.5},
+            "performance_score": 0.5,
+            "repetition_scores": [1.0, 1.0, 0.0, 0.0],
+            "source_kind": "external",
+            "harness": "mini-swe-agent",
+            "source_url": "https://example.test/official.json",
+            "source_sha256": official_checksum,
+            "fetched_at": "2026-07-12T00:00:00+00:00",
+        }
+    ]
+
+
+def test_study_report_loads_pinned_compatible_studies(tmp_path: Path) -> None:
+    previous_dir = write_study_directory(tmp_path / "previous")
+    current_dir = write_study_directory(tmp_path / "current")
+    stock = {"task": ["failed"] * 4}
+    symnav = {"task": ["passed"] * 4}
+    write_metric_attempts(previous_dir, stock, symnav)
+    write_metric_attempts(current_dir, stock, symnav)
+    (current_dir / "compatible-studies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "studies": [
+                    {
+                        "path": "../previous",
+                        "study_id": "study",
+                        "protocol_fingerprint": fingerprint(PROTOCOL),
+                        "suite_fingerprint": SUITE_FINGERPRINT,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    write_report(StudyDataset.load(current_dir), tmp_path / "report")
+
+    payload = json.loads((tmp_path / "report" / "analysis-v1.json").read_text())
+    assert len(payload["versions"]) == 1
+    assert payload["versions"][0]["left_study_id"] == "study"
+    assert payload["versions"][0]["right_study_id"] == "study"
+    assert payload["versions"][0]["uplift_difference"]["value"] == 0.0
+
+
 def write_study_directory(path: Path, tasks: tuple[str, ...] = ("task",)) -> Path:
     protocol = copy.deepcopy(PROTOCOL)
     protocol_fingerprint = fingerprint(protocol)
@@ -507,3 +565,28 @@ def write_metric_attempts(
                     task,
                 )
                 write_attempt(study_dir, "batch-1", attempt)
+
+
+def write_official_reference(study_dir: Path) -> str:
+    payload = {
+        "source_url": "https://example.test/official.json",
+        "fetched_at": "2026-07-12T00:00:00+00:00",
+        "harness": "mini-swe-agent",
+        "configurations": [
+            {
+                "model": "model",
+                "effort": "medium",
+                "task_scores": {"task": 0.5},
+                "performance_score": 0.5,
+                "repetition_scores": [1.0, 1.0, 0.0, 0.0],
+            }
+        ],
+    }
+    content = json.dumps(payload, sort_keys=True).encode()
+    checksum = hashlib.sha256(content).hexdigest()
+    (study_dir / "official-reference.json").write_bytes(content)
+    (study_dir / "official-reference.sha256").write_text(
+        f"{checksum}  official-reference.json\n",
+        encoding="utf-8",
+    )
+    return checksum
