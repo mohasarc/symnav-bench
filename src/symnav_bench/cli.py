@@ -37,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
             return plan_study_command(args)
         if args.command == "batch-matrix":
             return batch_matrix_command(args)
+        if args.command == "merge-results":
+            return merge_results_command(args)
     except Exception as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -82,6 +84,9 @@ def build_parser() -> argparse.ArgumentParser:
     batch_matrix_parser.add_argument("--configuration", required=True)
     batch_matrix_parser.add_argument("--mode", choices=("run-next", "run-all", "resume"), required=True)
     batch_matrix_parser.add_argument("--existing-study", type=Path)
+    merge_results_parser = subcommands.add_parser("merge-results")
+    merge_results_parser.add_argument("--study-dir", type=Path, required=True)
+    merge_results_parser.add_argument("--artifact", type=Path, action="append", required=True)
     return parser
 
 
@@ -187,6 +192,27 @@ def batch_matrix_command(args: argparse.Namespace) -> int:
         write_github_matrix(batch, matrix)
         payload.append({"batch_id": batch.batch_id, "matrix": json.loads(matrix.getvalue())})
     json.dump({"study_id": selection.study_id, "configuration_id": selection.configuration_id, "batches": payload}, sys.stdout, separators=(",", ":"), sort_keys=True)
+    sys.stdout.write("\n")
+    return 0
+
+
+def merge_results_command(args: argparse.Namespace) -> int:
+    from symnav_bench.workflow import merge_attempt_artifacts
+
+    attempts = merge_attempt_artifacts(args.study_dir, args.artifact)
+    json.dump(
+        {
+            "attempts": [
+                {
+                    "slot_id": attempt.identity.slot_id,
+                    "attempt_id": attempt.identity.attempt_id,
+                }
+                for attempt in attempts
+            ]
+        },
+        sys.stdout,
+        sort_keys=True,
+    )
     sys.stdout.write("\n")
     return 0
 
