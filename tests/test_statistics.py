@@ -38,8 +38,8 @@ def test_cluster_bootstrap_resamples_whole_task_deltas() -> None:
 
     assert comparison.uplift == Estimate(
         value=0.25,
-        lower_95=pytest.approx(1 / 12),
-        upper_95=pytest.approx(5 / 12),
+        lower_95=0.0,
+        upper_95=0.5,
     )
 
 

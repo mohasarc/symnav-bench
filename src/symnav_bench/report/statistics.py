@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from random import Random
 from statistics import mean
 
 from symnav_bench.report.study_dataset import ConfigurationMetrics
@@ -65,7 +66,7 @@ def compare_condition_to_stock(
     complete = _complete(stock) and _complete(treatment)
     point = mean(task.delta for task in task_deltas) if task_deltas else None
     uplift = (
-        Estimate(value=point, lower_95=point, upper_95=point)
+        _cluster_bootstrap(task_deltas, point, bootstrap_samples, seed)
         if complete and point is not None
         else None
     )
@@ -122,3 +123,31 @@ def _comparison_id(metrics: ConfigurationMetrics) -> str:
     return ":".join(
         (key.agent, key.model, key.effort, key.agent_version, key.condition)
     )
+
+
+def _cluster_bootstrap(
+    task_deltas: tuple[TaskDelta, ...],
+    point: float,
+    samples: int,
+    seed: int,
+) -> Estimate:
+    if samples <= 0:
+        raise ValueError("bootstrap_samples must be positive")
+    values = [task.delta for task in task_deltas]
+    random = Random(seed)
+    bootstrap = sorted(
+        mean(random.choices(values, k=len(values))) for _ in range(samples)
+    )
+    return Estimate(
+        value=point,
+        lower_95=_percentile(bootstrap, 0.025),
+        upper_95=_percentile(bootstrap, 0.975),
+    )
+
+
+def _percentile(values: list[float], quantile: float) -> float:
+    position = (len(values) - 1) * quantile
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(values) - 1)
+    fraction = position - lower_index
+    return values[lower_index] + (values[upper_index] - values[lower_index]) * fraction
