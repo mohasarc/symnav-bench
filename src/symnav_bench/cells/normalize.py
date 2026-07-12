@@ -18,11 +18,9 @@ from symnav_bench.cells.attempt import (
 )
 from symnav_bench.cells.cell import Cell, CellStatus
 from symnav_bench.cells.trajectory import (
-    ExecutedCommand,
-    extract_commands,
+    NormalizedToolEvent,
     extract_tool_events,
     summarize_adoption,
-    write_commands_jsonl,
     write_tool_events_jsonl,
 )
 from symnav_bench.run.job_config import HarnessIdentity
@@ -100,8 +98,8 @@ def normalize_trial(
     cell_dir.mkdir(parents=True)
     result = _read_json(trial_dir / "result.json") if trial_dir else {}
     trajectory = _read_json(trial_dir / "agent" / "trajectory.json") if trial_dir else {}
-    commands = extract_commands(trajectory)
-    write_commands_jsonl(commands, cell_dir / "commands.jsonl")
+    events = extract_tool_events(trajectory)
+    write_tool_events_jsonl(events, cell_dir / "tool-events.jsonl")
     if trial_dir:
         _copy_raw_trial_files(trial_dir, cell_dir / "raw")
         _copy_captured_workspace_artifacts(trial_dir, cell_dir / "raw" / "workspace")
@@ -119,7 +117,7 @@ def normalize_trial(
         timing=_timing(result),
         agent_version=_agent_version(result),
         harness=harness.to_json(),
-        command_counts=_command_counts(commands),
+        command_counts=_command_counts(events),
         written_at=datetime.now(UTC).isoformat(),
     )
     (cell_dir / "cell.json").write_text(
@@ -292,36 +290,34 @@ def _exception(
     return exception
 
 
-def _command_counts(commands: list[ExecutedCommand]) -> dict[str, Any]:
+def _command_counts(events: list[NormalizedToolEvent]) -> dict[str, Any]:
     symnav: dict[str, int] = {}
     symnav_failures: dict[str, int] = {}
     counts = {"search": 0, "read": 0, "other": 0, "timeouts": 0, "failures": 0}
-    for command in commands:
-        if command.timed_out:
+    for event in events:
+        if event.timed_out:
             counts["timeouts"] += 1
-        if command.succeeded is False:
+        if event.succeeded is False:
             counts["failures"] += 1
-        for tag in command.tags:
+        for tag in event.tags:
             if tag.startswith("symnav:"):
                 subcommand = tag.removeprefix("symnav:")
                 symnav[subcommand] = symnav.get(subcommand, 0) + 1
-                if command.succeeded is False:
+                if event.succeeded is False:
                     symnav_failures[subcommand] = symnav_failures.get(subcommand, 0) + 1
             elif tag in counts:
                 counts[tag] += 1
     return {
         "symnav": symnav,
         "symnav_failures": symnav_failures,
-        "symnav_skill_reads": _symnav_skill_reads(commands),
+        "symnav_skill_reads": _symnav_skill_reads(events),
         **counts,
     }
 
 
-def _symnav_skill_reads(commands: list[ExecutedCommand]) -> int:
+def _symnav_skill_reads(events: list[NormalizedToolEvent]) -> int:
     return sum(
         1
-        for command in commands
-        if ".agents/skills/symnav/SKILL.md" in command.command
-        or "/app/.agents/skills/symnav/SKILL.md" in command.command
-        or (command.tool.lower() == "skill" and command.args.get("skill") == "symnav")
+        for event in events
+        if event.kind == "skill" and "skill:symnav" in event.tags
     )

@@ -44,9 +44,6 @@ class NormalizedToolEvent:
     parser_warning: str | None = None
 
 
-ExecutedCommand = NormalizedToolEvent
-
-
 @dataclass(frozen=True)
 class AdoptionSummary:
     used_symnav: bool
@@ -161,10 +158,6 @@ def extract_nested_exec_events(event: Mapping[str, Any]) -> list[NormalizedToolE
     ]
 
 
-def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
-    return extract_tool_events(trajectory)
-
-
 def classify(tool: str, command: str) -> tuple[str, ...]:
     lowered_tool = tool.lower()
     lowered_command = command.lower()
@@ -209,15 +202,6 @@ def summarize_adoption(
         patch_calls=sum(event.kind == "patch" for event in events),
         command_counts=command_counts,
     )
-
-
-def write_commands_jsonl(commands: list[ExecutedCommand], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as stream:
-        for command in commands:
-            row = asdict(command)
-            row["tags"] = list(command.tags)
-            stream.write(json.dumps(row, sort_keys=True) + "\n")
 
 
 def write_tool_events_jsonl(events: Sequence[NormalizedToolEvent], path: Path) -> None:

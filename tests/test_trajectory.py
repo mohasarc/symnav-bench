@@ -6,10 +6,9 @@ from pathlib import Path
 from symnav_bench.cells.trajectory import (
     MAX_COMMAND_OUTPUT_CHARS,
     classify,
-    extract_commands,
     extract_tool_events,
     summarize_adoption,
-    write_commands_jsonl,
+    write_tool_events_jsonl,
 )
 
 
@@ -220,7 +219,7 @@ def test_reprocessing_stored_terra_trajectory_reports_real_adoption() -> None:
 
 
 def test_codex_exec_commands_extract_in_order() -> None:
-    commands = extract_commands(
+    commands = extract_tool_events(
         {
             "steps": [
                 {
@@ -242,7 +241,7 @@ def test_codex_exec_commands_extract_in_order() -> None:
 
 
 def test_extracts_exit_code_from_matching_observation() -> None:
-    commands = extract_commands(
+    commands = extract_tool_events(
         {
             "steps": [
                 {
@@ -280,7 +279,7 @@ def test_extracts_exit_code_from_matching_observation() -> None:
 
 
 def test_extracts_claude_exit_code_format() -> None:
-    commands = extract_commands(
+    commands = extract_tool_events(
         {
             "steps": [
                 {
@@ -300,7 +299,7 @@ def test_extracts_claude_exit_code_format() -> None:
 
 
 def test_write_stdin_inherits_running_command() -> None:
-    commands = extract_commands(
+    commands = extract_tool_events(
         {
             "steps": [
                 {
@@ -348,7 +347,7 @@ def test_write_stdin_inherits_running_command() -> None:
 
 
 def test_claude_tools_extract_and_classify() -> None:
-    commands = extract_commands(
+    commands = extract_tool_events(
         {
             "steps": [
                 {"tool_calls": [{"function_name": "Bash", "arguments": {"command": "rg -n Foo"}}]},
@@ -374,7 +373,7 @@ def test_classification_matrix() -> None:
 
 
 def test_timeout_and_jsonl(tmp_path) -> None:
-    commands = extract_commands(
+    commands = extract_tool_events(
         {
             "steps": [
                 {
@@ -385,9 +384,10 @@ def test_timeout_and_jsonl(tmp_path) -> None:
         }
     )
     assert commands[0].timed_out is True
-    path = tmp_path / "commands.jsonl"
-    write_commands_jsonl(commands, path)
+    path = tmp_path / "tool-events.jsonl"
+    write_tool_events_jsonl(commands, path)
     row = json.loads(path.read_text(encoding="utf-8"))
+    assert row["schema_version"] == 1
     assert row["timed_out"] is True
     assert row["output"] == "command timed out"
     assert row["output_truncated"] is False
@@ -395,7 +395,7 @@ def test_timeout_and_jsonl(tmp_path) -> None:
 
 def test_long_output_is_truncated_but_original_size_is_kept() -> None:
     output = f"Process exited with code 0\nOutput:\n{'a' * (MAX_COMMAND_OUTPUT_CHARS + 1)}"
-    commands = extract_commands(
+    commands = extract_tool_events(
         {
             "steps": [
                 {
@@ -413,4 +413,4 @@ def test_long_output_is_truncated_but_original_size_is_kept() -> None:
 
 
 def test_malformed_trajectory_returns_empty() -> None:
-    assert extract_commands({"steps": "bad"}) == []
+    assert extract_tool_events({"steps": "bad"}) == []
