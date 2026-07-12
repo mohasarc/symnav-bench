@@ -21,10 +21,17 @@ symnav-bench run \
   --results-dir results
 ```
 
-Generate report:
+Generate a study report:
 
 ```bash
-symnav-bench report --cells results --out report
+symnav-bench report --study studies/typescript-primary --out report
+```
+
+Stored v1 cells remain available in a separate Legacy report and never enter
+study statistics:
+
+```bash
+symnav-bench report --cells results --out legacy-report
 ```
 
 ## Docker

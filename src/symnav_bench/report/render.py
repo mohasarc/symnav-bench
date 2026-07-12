@@ -3,99 +3,180 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from symnav_bench.report.cell_set import CellSet
-from symnav_bench.report.charts import render_all
-from symnav_bench.report.comparison import ArmComparison
+from symnav_bench.report.study_dataset import (
+    ConfigurationMetrics,
+    LegacyDataset,
+    StudyDataset,
+    compute_configuration_metrics,
+)
 
 
-def write_report(comparisons: list[ArmComparison], cells: CellSet, out_dir: Path) -> None:
+def write_report(dataset: StudyDataset | LegacyDataset, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    chart_paths = render_all(comparisons, out_dir)
-    _write_markdown(comparisons, cells, chart_paths, out_dir / "report.md", out_dir)
-    _write_csv(comparisons, out_dir / "comparisons.csv")
-    _write_cells_csv(cells, out_dir / "cells.csv")
+    if isinstance(dataset, LegacyDataset):
+        _write_legacy_report(dataset, out_dir)
+        return
+    metrics = [
+        compute_configuration_metrics(dataset, key)
+        for key in dataset.configurations()
+    ]
+    _write_study_markdown(dataset, metrics, out_dir / "report.md")
+    _write_configurations_csv(metrics, out_dir / "configurations.csv")
+    _write_tasks_csv(metrics, out_dir / "tasks.csv")
 
 
-def _write_markdown(
-    comparisons: list[ArmComparison],
-    cells: CellSet,
-    chart_paths: list[Path],
+def _write_study_markdown(
+    dataset: StudyDataset,
+    metrics: list[ConfigurationMetrics],
     path: Path,
-    out_dir: Path,
 ) -> None:
-    lines = ["# symnav bench report", "", "Costs are `cost_usd_imputed` from Pier output.", ""]
-    for warning in cells.warnings:
-        lines.append(f"- Warning: {warning}")
-    for comparison in comparisons:
+    lines = [
+        "# symnav bench report",
+        "",
+        f"Study: `{dataset.manifest.id}`",
+        "",
+        "Costs are `cost_usd_imputed` from Pier output.",
+        "",
+    ]
+    lines.extend(f"- Warning: {warning}" for warning in dataset.warnings)
+    if dataset.warnings:
+        lines.append("")
+    for item in metrics:
         lines.extend(
             [
-                f"## {comparison.left.label} vs {comparison.right.label}",
+                f"## {_configuration_label(item)}",
                 "",
-                "| metric | left | right |",
-                "| --- | ---: | ---: |",
-                f"| mean f2p | {comparison.effectiveness.left_mean_f2p:.3f} | {comparison.effectiveness.right_mean_f2p:.3f} |",
-                f"| solved rate | {comparison.effectiveness.left_solved_rate:.3f} | {comparison.effectiveness.right_solved_rate:.3f} |",
-                f"| paired tasks | {len(comparison.paired_tasks)} | {len(comparison.paired_tasks)} |",
-                f"| matched solved tasks | {len(comparison.matched_tasks)} | {len(comparison.matched_tasks)} |",
-                f"| matched cost_usd_imputed | {_fmt(comparison.efficiency.left_cost)} | {_fmt(comparison.efficiency.right_cost)} |",
-                f"| matched tokens | {_fmt(comparison.efficiency.left_tokens)} | {_fmt(comparison.efficiency.right_tokens)} |",
-                f"| matched steps | {_fmt(comparison.efficiency.left_steps)} | {_fmt(comparison.efficiency.right_steps)} |",
+                f"Coverage: {item.coverage.scored_slots}/{item.coverage.planned_slots} scored slots; "
+                f"{item.coverage.complete_tasks}/{item.coverage.total_tasks} complete tasks.",
                 "",
-                "Matched-set efficiency only includes tasks solved by both arms.",
+                f"Status: {_coverage_status(item)}.",
+                "",
+                "| metric | value |",
+                "| --- | ---: |",
+                f"| performance score | {_format(item.performance_score)} |",
+                f"| mean f2p | {_format(item.mean_f2p)} |",
+                f"| mean p2p | {_format(item.mean_p2p)} |",
+                f"| mean partial | {_format(item.mean_partial)} |",
+                f"| total cost | {_format(item.total_cost)} |",
+                f"| cost per success | {_format(item.cost_per_success)} |",
                 "",
             ]
         )
-        if comparison.holes:
-            lines.append("Holes:")
-            lines.extend(f"- {hole}" for hole in comparison.holes)
-            lines.append("")
-        if comparison.agent_version_mismatch:
-            lines.append("Agent versions differ across compared arms.")
-            lines.append("")
-    for chart in chart_paths:
-        lines.append(f"![{chart.stem}]({chart.relative_to(out_dir)})")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _write_csv(comparisons: list[ArmComparison], path: Path) -> None:
+def _write_configurations_csv(
+    metrics: list[ConfigurationMetrics],
+    path: Path,
+) -> None:
+    fieldnames = [
+        "configuration",
+        "condition",
+        "bundle_hash",
+        "planned_slots",
+        "scored_slots",
+        "complete_tasks",
+        "total_tasks",
+        "provisional",
+        "pilot",
+        "performance_score",
+        "mean_f2p",
+        "mean_p2p",
+        "mean_partial",
+        "total_cost",
+        "cost_per_success",
+    ]
     with path.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(
-            stream,
-            fieldnames=[
-                "left",
-                "right",
-                "left_mean_f2p",
-                "right_mean_f2p",
-                "paired_tasks",
-                "matched_tasks",
-                "left_cost_usd_imputed",
-                "right_cost_usd_imputed",
-            ],
-        )
+        writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
-        for comparison in comparisons:
+        for item in metrics:
             writer.writerow(
                 {
-                    "left": comparison.left.label,
-                    "right": comparison.right.label,
-                    "left_mean_f2p": comparison.effectiveness.left_mean_f2p,
-                    "right_mean_f2p": comparison.effectiveness.right_mean_f2p,
-                    "paired_tasks": " ".join(comparison.paired_tasks),
-                    "matched_tasks": " ".join(comparison.matched_tasks),
-                    "left_cost_usd_imputed": comparison.efficiency.left_cost,
-                    "right_cost_usd_imputed": comparison.efficiency.right_cost,
+                    "configuration": f"{item.key.agent}:{item.key.model}:{item.key.effort}:{item.key.agent_version}",
+                    "condition": item.key.condition,
+                    "bundle_hash": item.key.bundle_hash,
+                    "planned_slots": item.coverage.planned_slots,
+                    "scored_slots": item.coverage.scored_slots,
+                    "complete_tasks": item.coverage.complete_tasks,
+                    "total_tasks": item.coverage.total_tasks,
+                    "provisional": item.coverage.provisional,
+                    "pilot": item.coverage.pilot,
+                    "performance_score": item.performance_score,
+                    "mean_f2p": item.mean_f2p,
+                    "mean_p2p": item.mean_p2p,
+                    "mean_partial": item.mean_partial,
+                    "total_cost": item.total_cost,
+                    "cost_per_success": item.cost_per_success,
                 }
             )
 
 
-def _write_cells_csv(cells: CellSet, path: Path) -> None:
+def _write_tasks_csv(metrics: list[ConfigurationMetrics], path: Path) -> None:
+    fieldnames = [
+        "configuration",
+        "condition",
+        "task",
+        "scored_trials",
+        "pass_fraction",
+        "mean_f2p",
+        "mean_p2p",
+        "mean_partial",
+        "mean_cost",
+        "median_cost",
+        "mean_output_tokens",
+        "mean_steps",
+        "mean_duration_seconds",
+    ]
     with path.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=["dirname", "status", "solved", "f2p", "cost_usd_imputed"])
+        writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
-        for cell in cells.cells:
+        for item in metrics:
+            for task in item.tasks:
+                writer.writerow(
+                    {
+                        "configuration": f"{item.key.agent}:{item.key.model}:{item.key.effort}:{item.key.agent_version}",
+                        "condition": item.key.condition,
+                        "task": task.task,
+                        "scored_trials": task.scored_trials,
+                        "pass_fraction": task.pass_fraction,
+                        "mean_f2p": task.mean_f2p,
+                        "mean_p2p": task.mean_p2p,
+                        "mean_partial": task.mean_partial,
+                        "mean_cost": task.mean_cost,
+                        "median_cost": task.median_cost,
+                        "mean_output_tokens": task.mean_output_tokens,
+                        "mean_steps": task.mean_steps,
+                        "mean_duration_seconds": task.mean_duration_seconds,
+                    }
+                )
+
+
+def _write_legacy_report(dataset: LegacyDataset, out_dir: Path) -> None:
+    lines = [
+        "# symnav bench report",
+        "",
+        "## Legacy",
+        "",
+        "Legacy cells are visible for audit and excluded from study statistics.",
+        "",
+    ]
+    lines.extend(f"- Warning: {warning}" for warning in dataset.warnings)
+    (out_dir / "report.md").write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
+    with (out_dir / "legacy-cells.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=["cell", "status", "solved", "f2p", "cost_usd_imputed"],
+        )
+        writer.writeheader()
+        for cell in dataset.cells:
             writer.writerow(
                 {
-                    "dirname": cell.identity.dirname(),
+                    "cell": cell.identity.dirname(),
                     "status": cell.status,
                     "solved": cell.solved,
                     "f2p": cell.rewards.get("f2p"),
@@ -104,5 +185,20 @@ def _write_cells_csv(cells: CellSet, path: Path) -> None:
             )
 
 
-def _fmt(value: float | None) -> str:
+def _configuration_label(item: ConfigurationMetrics) -> str:
+    return (
+        f"{item.key.agent}:{item.key.model}:{item.key.effort}:"
+        f"{item.key.agent_version}:{item.key.condition}"
+    )
+
+
+def _coverage_status(item: ConfigurationMetrics) -> str:
+    if item.coverage.pilot:
+        return "pilot"
+    if item.coverage.provisional:
+        return "provisional"
+    return "complete"
+
+
+def _format(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.3f}"

@@ -65,9 +65,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--deep-swe-ref", default=os.environ.get("DEEPSWE_REF", "unknown"))
 
     report_parser = subcommands.add_parser("report")
-    report_parser.add_argument("--cells", type=Path, required=True)
+    report_source = report_parser.add_mutually_exclusive_group(required=True)
+    report_source.add_argument("--study", type=Path)
+    report_source.add_argument("--cells", type=Path)
     report_parser.add_argument("--out", type=Path, required=True)
-    report_parser.add_argument("--compare", default="")
 
     plan_study_parser = subcommands.add_parser("plan-study")
     plan_study_parser.add_argument("--study", type=Path, required=True)
@@ -113,13 +114,15 @@ def run_command(args: argparse.Namespace) -> int:
 
 
 def report_command(args: argparse.Namespace) -> int:
-    from symnav_bench.report.cell_set import CellSet
-    from symnav_bench.report.comparison import planned_comparisons
     from symnav_bench.report.render import write_report
+    from symnav_bench.report.study_dataset import StudyDataset, import_legacy_cells
 
-    cells = CellSet.load(args.cells)
-    comparisons = planned_comparisons(cells, split_csv(args.compare) if args.compare else None)
-    write_report(comparisons, cells, args.out)
+    dataset = (
+        StudyDataset.load(args.study)
+        if args.study is not None
+        else import_legacy_cells(args.cells)
+    )
+    write_report(dataset, args.out)
     return 0
 
 

@@ -10,6 +10,7 @@ import yaml
 
 from symnav_bench.report.study_dataset import StudyDataset
 from symnav_bench.report.study_dataset import compute_configuration_metrics
+from symnav_bench.report.render import write_report
 
 
 PROTOCOL = {
@@ -280,6 +281,23 @@ def test_adoption_uses_trial_rates_and_task_macro_means(tmp_path: Path) -> None:
     assert metrics.adoption.used_symnav_rate == 0.625
     assert metrics.adoption.mean_symnav_calls == 4.5
     assert metrics.adoption.mean_command_counts == {"overview": 4.5}
+
+
+def test_study_report_exports_compatible_metrics_without_legacy_data(
+    tmp_path: Path,
+) -> None:
+    study_dir = write_study_directory(tmp_path / "study")
+    outcomes = {"task": ["passed"] * 4}
+    write_metric_attempts(study_dir, outcomes, outcomes)
+
+    write_report(StudyDataset.load(study_dir), tmp_path / "report")
+
+    markdown = (tmp_path / "report" / "report.md").read_text(encoding="utf-8")
+    assert "Study: `study`" in markdown
+    assert "performance score" in markdown
+    assert "Legacy" not in markdown
+    assert (tmp_path / "report" / "configurations.csv").exists()
+    assert (tmp_path / "report" / "tasks.csv").exists()
 
 
 def write_study_directory(path: Path, tasks: tuple[str, ...] = ("task",)) -> Path:
