@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>symnav bench</title>
+    <link rel="stylesheet" href="./static/styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div>
+        <p class="eyebrow">symnav bench</p>
+        <h1 id="study-title">Study analysis</h1>
+        <p id="study-subtitle" class="subtitle"></p>
+      </div>
+      <div id="coverage-badge" class="status-badge"></div>
+    </header>
+    <nav id="tabs" class="tabs" aria-label="Analysis views">
+      <button data-view="overview" aria-current="page">Overview</button>
+      <button data-view="matrix">Task matrix</button>
+      <button data-view="leaderboard">Leaderboard</button>
+      <button data-view="statistics">Statistics</button>
+      <button data-view="efficiency">Efficiency</button>
+      <button data-view="usage">Tool usage</button>
+      <button data-view="versions">Versions</button>
+      <button data-view="reliability">Reliability</button>
+      <button data-view="trials">Trials</button>
+      <button data-view="legacy">Legacy</button>
+    </nav>
+    <section id="filters" class="filters" aria-label="Dashboard filters"></section>
+    <main id="view" tabindex="-1"></main>
+    <aside id="drawer" class="drawer" hidden aria-label="Trial details"></aside>
+    <script id="dashboard-payload" type="application/json">__DASHBOARD_PAYLOAD__</script>
+    <script type="module" src="./static/app.js"></script>
+  </body>
+</html>
