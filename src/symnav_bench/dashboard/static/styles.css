@@ -28,6 +28,30 @@ h1 { font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -.055em; margin: .2rem 0
 main { padding: 1.25rem max(2rem, 5vw) 4rem; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; box-shadow: 0 12px 30px rgb(23 35 31 / 6%); padding: 1.4rem; }
 .panel h2 { margin-top: 0; }
+.summary-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+.summary-card { background: #f6f7f2; border: 1px solid var(--line); border-radius: .8rem; display: grid; gap: .35rem; padding: 1rem; }
+.summary-card.lead { background: var(--accent-soft); border-color: #8bd7ae; }
+.summary-card p, .summary-card small { color: var(--muted); margin: 0; }
+.summary-card strong { font-size: 1.8rem; letter-spacing: -.04em; }
+.chart-section { margin-top: 1.5rem; }
+.chart { display: block; max-height: 34rem; width: 100%; }
+.chart-label { fill: var(--ink); font: 13px ui-sans-serif, system-ui, sans-serif; }
+.zero-line { stroke: #9aa5a0; stroke-dasharray: 4 4; stroke-width: 1; }
+.interval { stroke: var(--stock); stroke-width: 3; }
+.interval.primary { stroke: var(--accent); stroke-width: 5; }
+.point { fill: var(--stock); }
+.point.primary { fill: var(--accent); }
+.statistics-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(28rem, 100%), 1fr)); }
+.stat-card { border: 1px solid var(--line); border-radius: .8rem; padding: 1rem; }
+.stat-card.primary { border-color: var(--accent); box-shadow: inset 4px 0 var(--accent); }
+.delta { stroke-width: 10; }
+.delta.positive { stroke: #2f9e44; }
+.delta.negative { stroke: #e03131; }
+.data-table { border-collapse: collapse; width: 100%; }
+.data-table th, .data-table td { border-bottom: 1px solid var(--line); padding: .7rem; text-align: left; }
+.data-table th { color: var(--muted); font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
+.data-table tr.full-symnav { background: var(--accent-soft); }
+.empty-state { background: #f5f6f2; border: 1px dashed var(--line); border-radius: .7rem; color: var(--muted); padding: 1rem; }
 .hint { color: var(--muted); font-size: .9rem; }
 .heatmap { border-collapse: separate; border-spacing: 3px; display: block; max-height: 68vh; overflow: auto; width: 100%; }
 .heatmap th { background: var(--panel); font-size: .72rem; max-width: 14rem; padding: .5rem; position: sticky; text-align: left; top: 0; z-index: 2; }

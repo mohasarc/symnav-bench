@@ -35,11 +35,250 @@ function render() {
     renderMatrix(document.querySelector("#view-content"), taskRows);
     return;
   }
+  if (state.view === "overview") {
+    renderOverview(document.querySelector("#view-content"));
+    return;
+  }
+  if (state.view === "leaderboard") {
+    renderLeaderboard(document.querySelector("#view-content"));
+    return;
+  }
+  if (state.view === "statistics") {
+    renderStatistics(document.querySelector("#view-content"));
+    return;
+  }
   document.querySelector("#view-content").replaceChildren(
     Object.assign(document.createElement("p"), {
       textContent: `${taskRows.length} task rows match current filters`,
     }),
   );
+}
+
+function renderOverview(container) {
+  const comparisons = filteredComparisons().sort(
+    (left, right) => (right.uplift?.value ?? -Infinity) - (left.uplift?.value ?? -Infinity),
+  );
+  const lead = comparisons.find((item) => item.primary) ?? comparisons[0];
+  const cards = document.createElement("div");
+  cards.className = "summary-grid";
+  cards.append(
+    summaryCard(
+      "Symnav uplift",
+      lead?.uplift ? formatMetric(lead.uplift.value, "uplift") : "Pending full coverage",
+      lead?.uplift
+        ? `95% CI ${formatMetric(lead.uplift.lower_95, "uplift")} to ${formatMetric(lead.uplift.upper_95, "uplift")}`
+        : "Confirmatory statistics require complete task pairs.",
+      true,
+    ),
+    summaryCard(
+      "Scored trials",
+      `${payload.coverage.scored_slots}/${payload.coverage.planned_slots}`,
+      `${payload.coverage.complete_tasks}/${payload.coverage.total_tasks} complete tasks`,
+    ),
+    summaryCard(
+      "Primary evidence",
+      lead?.demonstrated_improvement ? "Demonstrated" : "Not demonstrated",
+      lead?.randomization_p_value == null
+        ? "Paired test pending"
+        : `Paired randomization p=${lead.randomization_p_value.toFixed(4)}`,
+    ),
+  );
+  container.replaceChildren(cards, forestPlot(comparisons));
+}
+
+function renderLeaderboard(container) {
+  const rows = payload.configurations
+    .filter(
+      (item) =>
+        (state.configurationId === "all" || item.id === state.configurationId) &&
+        (state.condition === "all" || item.condition === state.condition),
+    )
+    .map((item) => ({
+      label: item.label,
+      condition: item.condition,
+      score: item.metrics.performance_score,
+      coverage: `${item.coverage.complete_tasks}/${item.coverage.total_tasks}`,
+      harness: "symnav-bench",
+      full: item.full_symnav,
+    }));
+  if (state.configurationId === "all" && state.condition === "all") {
+    rows.push(
+      ...payload.official_references.map((item) => ({
+        label: `${item.model} · ${item.effort}`,
+        condition: "official reference",
+        score: item.performance_score,
+        coverage: `${Object.keys(item.task_scores).length}/${Object.keys(item.task_scores).length}`,
+        harness: "mini-swe-agent",
+        full: false,
+      })),
+    );
+  }
+  rows.sort((left, right) => (right.score ?? -Infinity) - (left.score ?? -Infinity));
+  const table = dataTable(
+    ["Rank", "Configuration", "Condition", "Performance", "Coverage", "Harness"],
+    rows.map((row, index) => [
+      index + 1,
+      row.label,
+      row.condition,
+      row.score == null ? "—" : formatMetric(row.score, "performance_score"),
+      row.coverage,
+      row.harness,
+    ]),
+    rows.map((row) => (row.full ? "full-symnav" : "")),
+  );
+  container.replaceChildren(table);
+}
+
+function renderStatistics(container) {
+  const comparisons = filteredComparisons();
+  if (!comparisons.length) {
+    container.replaceChildren(emptyState("No compatible stock/treatment comparisons match these filters."));
+    return;
+  }
+  const grid = document.createElement("div");
+  grid.className = "statistics-grid";
+  for (const comparison of comparisons) {
+    const section = document.createElement("section");
+    section.className = comparison.primary ? "stat-card primary" : "stat-card";
+    const heading = document.createElement("h3");
+    heading.textContent = comparison.condition === "symnav" ? "Full symnav vs stock" : `${comparison.condition} vs stock`;
+    const evidence = definitionList({
+      uplift_points: comparison.uplift?.value == null ? "Pending" : formatMetric(comparison.uplift.value, "uplift"),
+      lower_95: comparison.uplift?.lower_95 == null ? "Pending" : formatMetric(comparison.uplift.lower_95, "uplift"),
+      upper_95: comparison.uplift?.upper_95 == null ? "Pending" : formatMetric(comparison.uplift.upper_95, "uplift"),
+      randomization_p: comparison.randomization_p_value ?? "Pending",
+      wins: comparison.wins,
+      ties: comparison.ties,
+      losses: comparison.losses,
+      demonstrated: comparison.demonstrated_improvement,
+      material: comparison.material_improvement,
+    });
+    section.append(heading, evidence, deltaPlot(comparison));
+    grid.append(section);
+  }
+  container.replaceChildren(grid);
+}
+
+function filteredComparisons() {
+  return payload.comparisons.filter(
+    (item) =>
+      (state.configurationId === "all" || item.base_configuration_id === state.configurationId) &&
+      (state.condition === "all" || item.condition === state.condition),
+  );
+}
+
+function summaryCard(label, value, detail, lead = false) {
+  const card = document.createElement("article");
+  card.className = lead ? "summary-card lead" : "summary-card";
+  const labelNode = document.createElement("p");
+  labelNode.textContent = label;
+  const valueNode = document.createElement("strong");
+  valueNode.textContent = value;
+  const detailNode = document.createElement("small");
+  detailNode.textContent = detail;
+  card.append(labelNode, valueNode, detailNode);
+  return card;
+}
+
+function forestPlot(comparisons) {
+  const section = document.createElement("section");
+  section.className = "chart-section";
+  const heading = document.createElement("h3");
+  heading.textContent = "Paired symnav uplift by configuration";
+  section.append(heading);
+  if (!comparisons.some((item) => item.uplift)) {
+    section.append(emptyState("Intervals appear after all planned trials for paired tasks are scored."));
+    return section;
+  }
+  const width = 760;
+  const left = 230;
+  const svg = svgElement("svg", { viewBox: `0 0 ${width} ${comparisons.length * 52 + 44}`, role: "img" });
+  svg.classList.add("chart");
+  const scale = (value) => left + ((value + 0.5) / 1) * (width - left - 24);
+  svg.append(svgElement("line", { x1: scale(0), x2: scale(0), y1: 12, y2: comparisons.length * 52 + 22, class: "zero-line" }));
+  comparisons.forEach((comparison, index) => {
+    const y = 30 + index * 52;
+    const label = svgElement("text", { x: 4, y: y + 5, class: "chart-label" });
+    label.textContent = comparison.condition === "symnav" ? "Full symnav" : comparison.condition;
+    svg.append(label);
+    if (!comparison.uplift) return;
+    svg.append(
+      svgElement("line", {
+        x1: scale(comparison.uplift.lower_95),
+        x2: scale(comparison.uplift.upper_95),
+        y1: y,
+        y2: y,
+        class: comparison.primary ? "interval primary" : "interval",
+      }),
+      svgElement("circle", {
+        cx: scale(comparison.uplift.value),
+        cy: y,
+        r: 6,
+        class: comparison.primary ? "point primary" : "point",
+      }),
+    );
+  });
+  section.append(svg);
+  return section;
+}
+
+function deltaPlot(comparison) {
+  const width = 520;
+  const height = Math.max(90, comparison.task_deltas.length * 18 + 30);
+  const svg = svgElement("svg", { viewBox: `0 0 ${width} ${height}`, role: "img" });
+  svg.classList.add("chart", "delta-chart");
+  const center = width / 2;
+  svg.append(svgElement("line", { x1: center, x2: center, y1: 8, y2: height - 8, class: "zero-line" }));
+  comparison.task_deltas.forEach((task, index) => {
+    const y = 18 + index * 18;
+    const bar = svgElement("line", {
+      x1: center,
+      x2: center + task.delta * (width / 2 - 18),
+      y1: y,
+      y2: y,
+      class: task.delta >= 0 ? "delta positive" : "delta negative",
+    });
+    const title = svgElement("title", {});
+    title.textContent = `${task.task}: ${formatMetric(task.delta, "uplift")}`;
+    bar.append(title);
+    svg.append(bar);
+  });
+  return svg;
+}
+
+function dataTable(headers, rows, rowClasses = []) {
+  const table = document.createElement("table");
+  table.className = "data-table";
+  const header = table.createTHead().insertRow();
+  for (const value of headers) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = value;
+    header.append(cell);
+  }
+  const body = table.createTBody();
+  rows.forEach((values, index) => {
+    const row = body.insertRow();
+    row.className = rowClasses[index] ?? "";
+    for (const value of values) {
+      const cell = row.insertCell();
+      cell.textContent = String(value);
+    }
+  });
+  return table;
+}
+
+function svgElement(name, attributes) {
+  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
+  return element;
+}
+
+function emptyState(message) {
+  const paragraph = document.createElement("p");
+  paragraph.className = "empty-state";
+  paragraph.textContent = message;
+  return paragraph;
 }
 
 function renderMatrix(container, taskRows) {
