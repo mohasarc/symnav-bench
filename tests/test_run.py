@@ -187,8 +187,8 @@ def test_runner_continues_after_error(tmp_path) -> None:
         (jobs_dir / "agent" / "trajectory.json").write_text('{"steps":[]}', encoding="utf-8")
 
     runner = CellRunner(config, harness=_harness(), pier=pier, sleeper=lambda seconds: None)
-    cells = runner.run_all()
-    assert [cell.status for cell in cells] == ["error", "completed"]
+    attempts = runner.run_all()
+    assert [attempt.disposition.outcome for attempt in attempts] == ["retryable_error", "passed"]
 
 
 def test_runner_normalizes_pier_trial_result_after_agent_failure(tmp_path) -> None:
@@ -222,9 +222,13 @@ def test_runner_normalizes_pier_trial_result_after_agent_failure(tmp_path) -> No
         pier=pier,
         sleeper=lambda seconds: None,
     )
-    cells = runner.run_all()
-    assert [cell.status for cell in cells] == ["completed"]
-    assert cells[0].rewards == {"f2p": 0.0}
+    attempts = runner.run_all()
+    assert [attempt.disposition.outcome for attempt in attempts] == ["failed"]
+    assert attempts[0].rewards == {"f2p": 0.0}
+    assert attempts[0].exception == {
+        "exception_type": "RuntimeError",
+        "message": "agent failed",
+    }
 
 
 def test_pier_run_command_uses_current_cli_output_flag(tmp_path) -> None:

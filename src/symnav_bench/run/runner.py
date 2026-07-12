@@ -1,19 +1,21 @@
 from __future__ import annotations
 
-import shutil
+import os
 import subprocess
 import tempfile
-from datetime import UTC, datetime, timedelta
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from time import sleep as real_sleep
 from typing import Callable
 
+from symnav_bench.batch_plan import TrialSlot, slot_id
 from symnav_bench.cell_identity import CellIdentity
-from symnav_bench.cells.cell import Cell
-from symnav_bench.cells.normalize import HarnessMeta, normalize_trial
+from symnav_bench.cells.attempt import AttemptIdentity, AttemptRecord
+from symnav_bench.cells.normalize import HarnessMeta, normalize_attempt
 from symnav_bench.run.config import RunConfig
-from symnav_bench.run.job_config import build_job_yaml
-from symnav_bench.run.limits import find_limit_marker, next_backoff, parse_limit_reset
+from symnav_bench.run.job_config import HarnessIdentity, build_job_yaml
+from symnav_bench.run.limits import find_limit_marker
 
 
 PierRun = Callable[[Path, Path], None]
@@ -25,7 +27,7 @@ class CellRunner:
     def __init__(
         self,
         config: RunConfig,
-        harness: HarnessMeta,
+        harness: HarnessIdentity | HarnessMeta,
         pier: PierRun,
         clock: Clock | None = None,
         sleeper: Sleeper | None = None,
@@ -56,58 +58,74 @@ class CellRunner:
             pier=pier,
         )
 
-    def run_all(self) -> list[Cell]:
+    def run_all(self) -> list[AttemptRecord]:
         return [self.run_cell(cell) for cell in self.config.cells()]
 
-    def run_cell(self, identity: CellIdentity) -> Cell:
-        waits: list[timedelta] = []
-        total_wait = timedelta()
-        while True:
-            jobs_dir = Path(tempfile.mkdtemp(prefix="symnav-bench-jobs-"))
-            job_yaml = jobs_dir / "job.yaml"
-            condition = next(c for c in self.config.conditions if c.label == identity.condition_label)
-            job_yaml.write_text(
-                build_job_yaml(identity.spec, condition, identity.task, self.config.tasks_dir),
-                encoding="utf-8",
-            )
-            try:
-                self.pier(job_yaml, jobs_dir)
-            except Exception as error:
-                trial_dir = find_trial_dir(jobs_dir)
-                if trial_dir is not None:
-                    return normalize_trial(
-                        trial_dir,
-                        identity,
-                        self.harness,
-                        "completed",
-                        None,
-                        self.config.results_dir,
-                    )
-                marker = find_limit_marker(jobs_dir)
-                if marker:
-                    wait = self._limit_wait(marker, waits)
-                    if total_wait + wait > self.config.max_limit_wait:
-                        return normalize_trial(jobs_dir, identity, self.harness, "limited", marker[:500], self.config.results_dir)
-                    waits.append(wait)
-                    total_wait += wait
-                    self.sleep(wait.total_seconds())
-                    shutil.rmtree(jobs_dir, ignore_errors=True)
-                    continue
-                return normalize_trial(jobs_dir, identity, self.harness, "error", str(error), self.config.results_dir)
-            return normalize_trial(
-                find_trial_dir(jobs_dir) or jobs_dir,
-                identity,
-                self.harness,
-                "completed",
-                None,
-                self.config.results_dir,
-            )
+    def run_cell(self, identity: CellIdentity) -> AttemptRecord:
+        jobs_dir = Path(tempfile.mkdtemp(prefix="symnav-bench-jobs-"))
+        job_yaml = jobs_dir / "job.yaml"
+        condition = next(c for c in self.config.conditions if c.label == identity.condition_label)
+        job_yaml.write_text(
+            build_job_yaml(identity.spec, condition, identity.task, self.config.tasks_dir),
+            encoding="utf-8",
+        )
+        pier_error = None
+        try:
+            self.pier(job_yaml, jobs_dir)
+        except Exception as error:
+            marker = find_limit_marker(jobs_dir)
+            pier_error = RuntimeError(f"UsageLimitError: {marker[:500]}") if marker else error
+        trial_dir = find_trial_dir(jobs_dir)
+        slot = self._slot(identity, condition.kind, condition.symnav_skill_variant)
+        return normalize_attempt(
+            trial_dir or jobs_dir,
+            slot,
+            _attempt_identity(slot),
+            self._harness_identity(identity),
+            pier_error,
+            self.config.results_dir,
+        )
 
-    def _limit_wait(self, marker: str, waits: list[timedelta]) -> timedelta:
-        reset = parse_limit_reset(marker, self.clock())
-        if reset is not None:
-            return reset - self.clock().astimezone(UTC) + timedelta(minutes=1)
-        return next_backoff(waits)
+    def _slot(self, identity: CellIdentity, condition_kind: str, variant: str) -> TrialSlot:
+        condition = condition_kind if condition_kind == "stock" or variant == "all" else variant
+        study_id = os.environ.get("SYMNAV_BENCH_STUDY_ID", "adhoc")
+        configuration_id = identity.spec.key
+        repetition = identity.rep + 1
+        stable_slot_id = slot_id(
+            study_id,
+            configuration_id,
+            condition,
+            identity.task,
+            repetition,
+        )
+        return TrialSlot(
+            study_id=study_id,
+            configuration_id=configuration_id,
+            condition=condition,
+            task=identity.task,
+            repetition=repetition,
+            slot_id=stable_slot_id,
+        )
+
+    def _harness_identity(self, identity: CellIdentity) -> HarnessIdentity:
+        if isinstance(self.harness, HarnessIdentity):
+            return self.harness
+        return HarnessIdentity(
+            image_reference=self.harness.image_version,
+            image_digest=os.environ.get("SYMNAV_BENCH_IMAGE_DIGEST", "unknown"),
+            symnav_bench_sha=os.environ.get("SYMNAV_BENCH_SHA", self.harness.image_version),
+            pier_version=self.harness.pier_version,
+            deep_swe_sha=self.harness.deep_swe_ref,
+            symnav_sha=self.harness.symnav_ref,
+            agent_name=identity.spec.agent,
+            agent_version=os.environ.get(f"{identity.spec.agent.upper()}_VERSION", "unknown"),
+            bundle_id=None,
+            bundle_hash=None,
+            task_checksum="unknown",
+            prompt_rule_hash="unknown",
+            requested_model=identity.spec.model,
+            requested_effort=identity.spec.effort,
+        )
 
 
 def subprocess_pier_run(job_yaml: Path, jobs_dir: Path) -> None:
@@ -129,6 +147,17 @@ def find_trial_dir(jobs_dir: Path) -> Path | None:
     if not result_paths:
         return None
     return max(result_paths, key=lambda path: path.stat().st_mtime).parent
+
+
+def _attempt_identity(slot: TrialSlot) -> AttemptIdentity:
+    run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+    return AttemptIdentity(
+        slot_id=slot.slot_id,
+        attempt_id=uuid.uuid4().hex,
+        github_run_id=os.environ.get("GITHUB_RUN_ID"),
+        github_run_attempt=int(run_attempt) if run_attempt and run_attempt.isdigit() else None,
+        github_job=os.environ.get("GITHUB_JOB"),
+    )
 
 
 def _pier_version() -> str:
