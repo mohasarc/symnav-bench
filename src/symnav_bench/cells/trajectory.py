@@ -5,7 +5,7 @@ import re
 import shlex
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, Sequence
 
 
 TIMEOUT_MARKERS: tuple[str, ...] = (
@@ -179,6 +179,35 @@ def classify(tool: str, command: str) -> tuple[str, ...]:
     if lowered_command.startswith("sed -n") or lowered_command.startswith("sed "):
         return ("read",)
     return ("other",)
+
+
+def summarize_adoption(
+    events: Sequence[NormalizedToolEvent],
+    agent_steps: int | None,
+) -> AdoptionSummary:
+    symnav_events = [event for event in events if any(tag.startswith("symnav:") for tag in event.tags)]
+    command_counts: dict[str, int] = {}
+    for event in symnav_events:
+        for tag in event.tags:
+            if not tag.startswith("symnav:"):
+                continue
+            command = tag.removeprefix("symnav:")
+            command_counts[command] = command_counts.get(command, 0) + 1
+    symnav_calls = len(symnav_events)
+    valid_agent_steps = agent_steps if agent_steps is not None and agent_steps > 0 else None
+    return AdoptionSummary(
+        used_symnav=bool(symnav_events),
+        read_symnav_skill=any(event.kind == "skill" and "skill:symnav" in event.tags for event in events),
+        symnav_calls=symnav_calls,
+        symnav_calls_per_agent_step=symnav_calls / valid_agent_steps if valid_agent_steps else 0.0,
+        symnav_failures=sum(event.succeeded is False for event in symnav_events),
+        symnav_timeouts=sum(event.timed_out for event in symnav_events),
+        first_symnav_step=min((event.step_id for event in symnav_events), default=None),
+        search_calls=sum(event.kind == "search" or "search" in event.tags for event in events),
+        read_calls=sum(event.kind == "read" or "read" in event.tags for event in events),
+        patch_calls=sum(event.kind == "patch" for event in events),
+        command_counts=command_counts,
+    )
 
 
 def write_commands_jsonl(commands: list[ExecutedCommand], path: Path) -> None:
