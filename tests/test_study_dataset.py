@@ -234,6 +234,54 @@ def test_efficiency_includes_failed_trials_and_preserves_distributions(
     assert metrics.cost_per_success == 27.5
 
 
+def test_adoption_uses_trial_rates_and_task_macro_means(tmp_path: Path) -> None:
+    study_dir = write_study_directory(tmp_path, tasks=("task-a", "task-b"))
+    stock = {
+        "task-a": ["passed"] * 4,
+        "task-b": ["passed"],
+    }
+    symnav = {
+        "task-a": ["passed"] * 4,
+        "task-b": ["passed"] * 4,
+    }
+    write_metric_attempts(study_dir, stock, symnav)
+    for path in study_dir.glob("**/attempt.json"):
+        attempt = json.loads(path.read_text(encoding="utf-8"))
+        if attempt["slot"]["condition"] != "stock":
+            continue
+        task = attempt["slot"]["task"]
+        repetition = attempt["slot"]["repetition"]
+        used = task == "task-b" or repetition == 1
+        calls = 8 if task == "task-b" else (4 if used else 0)
+        attempt["adoption"].update(
+            {
+                "used_symnav": used,
+                "read_symnav_skill": used,
+                "symnav_calls": calls,
+                "symnav_calls_per_agent_step": calls / 4,
+                "first_symnav_step": 2 if used else None,
+                "command_counts": {"overview": calls},
+            }
+        )
+        path.write_text(json.dumps(attempt), encoding="utf-8")
+
+    dataset = StudyDataset.load(study_dir)
+    stock_key = next(key for key in dataset.configurations() if key.condition == "stock")
+    metrics = compute_configuration_metrics(dataset, stock_key)
+
+    task_a, task_b = metrics.tasks
+    assert task_a.adoption is not None
+    assert task_a.adoption.used_symnav_rate == 0.25
+    assert task_a.adoption.mean_symnav_calls == 1.0
+    assert task_b.adoption is not None
+    assert task_b.adoption.used_symnav_rate == 1.0
+    assert task_b.adoption.mean_symnav_calls == 8.0
+    assert metrics.adoption is not None
+    assert metrics.adoption.used_symnav_rate == 0.625
+    assert metrics.adoption.mean_symnav_calls == 4.5
+    assert metrics.adoption.mean_command_counts == {"overview": 4.5}
+
+
 def write_study_directory(path: Path, tasks: tuple[str, ...] = ("task",)) -> Path:
     protocol = copy.deepcopy(PROTOCOL)
     protocol_fingerprint = fingerprint(protocol)

@@ -231,7 +231,9 @@ def compute_configuration_metrics(
             if total_cost is not None and successes > 0
             else None
         ),
-        adoption=None,
+        adoption=_macro_adoption(
+            [task.adoption for task in task_metrics if task.adoption is not None]
+        ),
     )
 
 
@@ -446,7 +448,7 @@ def _effectiveness_task_metrics(
         mean_duration_seconds=_mean_optional(
             [_duration_seconds(attempt) for attempt in attempts]
         ),
-        adoption=None,
+        adoption=_task_adoption(attempts),
     )
 
 
@@ -501,3 +503,90 @@ def _duration_seconds(attempt: AttemptRecord) -> float | None:
         if name.endswith("_seconds") and (value := _number(raw)) is not None
     ]
     return sum(values) if values else None
+
+
+def _task_adoption(attempts: list[AttemptRecord]) -> AdoptionSummary | None:
+    if not attempts:
+        return None
+    command_names = sorted(
+        {
+            command
+            for attempt in attempts
+            for command in attempt.adoption.command_counts
+        }
+    )
+    return AdoptionSummary(
+        used_symnav_rate=mean(attempt.adoption.used_symnav for attempt in attempts),
+        read_symnav_skill_rate=mean(
+            attempt.adoption.read_symnav_skill for attempt in attempts
+        ),
+        mean_symnav_calls=mean(attempt.adoption.symnav_calls for attempt in attempts),
+        mean_symnav_calls_per_agent_step=mean(
+            attempt.adoption.symnav_calls_per_agent_step for attempt in attempts
+        ),
+        mean_symnav_failures=mean(
+            attempt.adoption.symnav_failures for attempt in attempts
+        ),
+        mean_symnav_timeouts=mean(
+            attempt.adoption.symnav_timeouts for attempt in attempts
+        ),
+        mean_first_symnav_step=_mean_optional(
+            [
+                _number(attempt.adoption.first_symnav_step)
+                for attempt in attempts
+            ]
+        ),
+        mean_search_calls=mean(
+            attempt.adoption.search_calls for attempt in attempts
+        ),
+        mean_read_calls=mean(attempt.adoption.read_calls for attempt in attempts),
+        mean_patch_calls=mean(attempt.adoption.patch_calls for attempt in attempts),
+        mean_command_counts={
+            command: mean(
+                attempt.adoption.command_counts.get(command, 0)
+                for attempt in attempts
+            )
+            for command in command_names
+        },
+    )
+
+
+def _macro_adoption(summaries: list[AdoptionSummary]) -> AdoptionSummary | None:
+    if not summaries:
+        return None
+    command_names = sorted(
+        {
+            command
+            for summary in summaries
+            for command in summary.mean_command_counts
+        }
+    )
+    return AdoptionSummary(
+        used_symnav_rate=mean(summary.used_symnav_rate for summary in summaries),
+        read_symnav_skill_rate=mean(
+            summary.read_symnav_skill_rate for summary in summaries
+        ),
+        mean_symnav_calls=mean(summary.mean_symnav_calls for summary in summaries),
+        mean_symnav_calls_per_agent_step=mean(
+            summary.mean_symnav_calls_per_agent_step for summary in summaries
+        ),
+        mean_symnav_failures=mean(
+            summary.mean_symnav_failures for summary in summaries
+        ),
+        mean_symnav_timeouts=mean(
+            summary.mean_symnav_timeouts for summary in summaries
+        ),
+        mean_first_symnav_step=_mean_optional(
+            [summary.mean_first_symnav_step for summary in summaries]
+        ),
+        mean_search_calls=mean(summary.mean_search_calls for summary in summaries),
+        mean_read_calls=mean(summary.mean_read_calls for summary in summaries),
+        mean_patch_calls=mean(summary.mean_patch_calls for summary in summaries),
+        mean_command_counts={
+            command: mean(
+                summary.mean_command_counts.get(command, 0.0)
+                for summary in summaries
+            )
+            for command in command_names
+        },
+    )
