@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
+import shutil
 from typing import Literal
+from typing import Sequence
 
 from symnav_bench.batch_plan import BatchPlan
 from symnav_bench.batch_plan import plan_balanced_batches, plan_trial_slots
 from symnav_bench.report.study_dataset import StudyDataset
+from symnav_bench.cells.attempt import AttemptRecord
 from symnav_bench.study import StudyManifest
 from symnav_bench.suite import SuiteManifest
 
@@ -19,6 +24,27 @@ class BatchSelection:
     configuration_id: str
     mode: RunMode
     batches: tuple[BatchPlan, ...]
+
+
+def merge_attempt_artifacts(
+    study_dir: Path,
+    artifact_dirs: Sequence[Path],
+) -> list[AttemptRecord]:
+    merged: list[AttemptRecord] = []
+    for artifact_dir in artifact_dirs:
+        for source in sorted(artifact_dir.rglob("attempt.json")):
+            raw = json.loads(source.read_text(encoding="utf-8"))
+            slot_id = str(raw["identity"]["slot_id"])
+            attempt_id = str(raw["identity"]["attempt_id"])
+            target = study_dir / "attempts" / slot_id / f"{attempt_id}.json"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                if target.read_bytes() != source.read_bytes():
+                    raise FileExistsError(f"attempt already exists with different content: {target}")
+            else:
+                shutil.copy2(source, target)
+            merged.append(AttemptRecord.load(source))
+    return sorted(merged, key=lambda attempt: attempt.identity.attempt_id)
 
 
 def select_batches(

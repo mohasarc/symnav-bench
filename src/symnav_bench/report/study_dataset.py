@@ -91,7 +91,10 @@ class StudyDataset:
 
     @classmethod
     def load(cls, study_dir: Path) -> StudyDataset:
-        manifest = StudyManifest.load(study_dir / "study.yaml")
+        manifest_path = study_dir / "manifest.yml"
+        if not manifest_path.exists():
+            manifest_path = study_dir / "study.yaml"
+        manifest = StudyManifest.load(manifest_path)
         suite = _load_suite_manifest(study_dir / "suite.json")
         planned_slots = plan_trial_slots(manifest, suite)
         attempts_by_slot: dict[str, list[AttemptRecord]] = {
@@ -99,7 +102,11 @@ class StudyDataset:
         }
         warnings: list[str] = []
         expected_bundle_hashes: dict[tuple[str, str], str | None] = {}
-        for path in sorted(study_dir.glob("**/attempt.json")):
+        attempt_paths = {
+            *study_dir.glob("**/attempt.json"),
+            *study_dir.glob("attempts/*/*.json"),
+        }
+        for path in sorted(attempt_paths):
             raw = _load_mapping(path)
             semantic_slot = _planned_semantic_slot(planned_slots, raw)
             if semantic_slot is None:
