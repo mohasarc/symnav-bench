@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import mean
 from typing import Any, cast
 
 from symnav_bench.batch_plan import TrialSlot, plan_trial_slots, slot_id
@@ -163,7 +164,61 @@ def compute_configuration_metrics(
     dataset: StudyDataset,
     key: ConfigurationKey,
 ) -> ConfigurationMetrics:
-    raise NotImplementedError
+    grouped = dataset.configurations()
+    if key not in grouped:
+        raise KeyError(f"unknown configuration key {key}")
+    results = grouped[key]
+    configuration_id = _configuration_id(dataset, key)
+    complete_tasks = _complete_tasks(dataset, configuration_id)
+    task_metrics = tuple(
+        _effectiveness_task_metrics(task.slug, results)
+        for task in dataset.suite.tasks
+    )
+    completed_metrics = [
+        task for task in task_metrics if task.task in complete_tasks
+    ]
+    unresolved = tuple(
+        result.slot.slot_id for result in results if result.scored_attempt is None
+    )
+    scored_slots = sum(result.scored_attempt is not None for result in results)
+    retryable_attempts = sum(
+        attempt.disposition.outcome == "retryable_error"
+        for result in results
+        for attempt in result.attempts
+    )
+    total_tasks = len(dataset.suite.tasks)
+    coverage = Coverage(
+        planned_slots=len(results),
+        scored_slots=scored_slots,
+        retryable_attempts=retryable_attempts,
+        unresolved_slot_ids=unresolved,
+        complete_tasks=len(complete_tasks),
+        total_tasks=total_tasks,
+        provisional=len(complete_tasks) != total_tasks,
+        pilot=scored_slots > 0 and len(complete_tasks) != total_tasks,
+    )
+    repetitions = dataset.manifest.protocol.repetitions
+    repetition_scores = tuple(
+        _repetition_score(results, complete_tasks, repetition)
+        for repetition in range(1, repetitions + 1)
+    ) if complete_tasks else ()
+    return ConfigurationMetrics(
+        key=key,
+        coverage=coverage,
+        tasks=task_metrics,
+        performance_score=_mean_optional(
+            [task.pass_fraction for task in completed_metrics]
+        ),
+        repetition_scores=repetition_scores,
+        mean_f2p=_mean_optional([task.mean_f2p for task in completed_metrics]),
+        mean_p2p=_mean_optional([task.mean_p2p for task in completed_metrics]),
+        mean_partial=_mean_optional(
+            [task.mean_partial for task in completed_metrics]
+        ),
+        total_cost=None,
+        cost_per_success=None,
+        adoption=None,
+    )
 
 
 @dataclass(frozen=True)
@@ -305,3 +360,100 @@ def _load_mapping(path: Path) -> dict[str, Any]:
 
 def _mapping(value: object) -> dict[str, Any]:
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
+def _configuration_id(dataset: StudyDataset, key: ConfigurationKey) -> str:
+    for configuration in dataset.manifest.configurations:
+        if (
+            configuration.spec.agent == key.agent
+            and configuration.spec.model == key.model
+            and configuration.spec.effort == key.effort
+            and configuration.agent_version == key.agent_version
+        ):
+            return configuration.id
+    raise KeyError(f"configuration metadata not found for {key}")
+
+
+def _complete_tasks(dataset: StudyDataset, configuration_id: str) -> set[str]:
+    repetitions = dataset.manifest.protocol.repetitions
+    conditions = dataset.manifest.protocol.conditions
+    complete: set[str] = set()
+    for task in dataset.suite.tasks:
+        matching = [
+            result
+            for result in dataset.slots
+            if result.slot.configuration_id == configuration_id
+            and result.slot.task == task.slug
+        ]
+        complete_conditions = {
+            condition
+            for condition in conditions
+            if sum(
+                result.scored_attempt is not None
+                for result in matching
+                if result.slot.condition == condition
+            )
+            == repetitions
+        }
+        if complete_conditions == set(conditions):
+            complete.add(task.slug)
+    return complete
+
+
+def _effectiveness_task_metrics(
+    task: str,
+    results: tuple[SlotResult, ...],
+) -> TaskMetrics:
+    attempts = [
+        result.scored_attempt
+        for result in results
+        if result.slot.task == task and result.scored_attempt is not None
+    ]
+    return TaskMetrics(
+        task=task,
+        scored_trials=len(attempts),
+        pass_fraction=(
+            mean(attempt.disposition.outcome == "passed" for attempt in attempts)
+            if attempts
+            else None
+        ),
+        mean_f2p=_mean_reward(attempts, "f2p"),
+        mean_p2p=_mean_reward(attempts, "p2p"),
+        mean_partial=_mean_reward(attempts, "partial"),
+        mean_cost=None,
+        median_cost=None,
+        mean_output_tokens=None,
+        mean_steps=None,
+        mean_duration_seconds=None,
+        adoption=None,
+    )
+
+
+def _repetition_score(
+    results: tuple[SlotResult, ...],
+    complete_tasks: set[str],
+    repetition: int,
+) -> float:
+    outcomes = [
+        result.scored_attempt.disposition.outcome == "passed"
+        for result in results
+        if result.slot.task in complete_tasks
+        and result.slot.repetition == repetition
+        and result.scored_attempt is not None
+    ]
+    return mean(outcomes)
+
+
+def _mean_reward(attempts: list[AttemptRecord], key: str) -> float | None:
+    return _mean_optional([_number(attempt.rewards.get(key)) for attempt in attempts])
+
+
+def _mean_optional(values: list[float | None]) -> float | None:
+    present = [value for value in values if value is not None]
+    return mean(present) if present else None
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
