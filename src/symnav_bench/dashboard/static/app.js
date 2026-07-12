@@ -4,6 +4,7 @@ import {
   buildTrialDrawer,
   createInitialState,
   filterTaskRows,
+  orderVersions,
 } from "./state.js";
 
 const payload = JSON.parse(document.querySelector("#dashboard-payload").textContent);
@@ -55,11 +56,102 @@ function render() {
     renderToolUsage(document.querySelector("#view-content"), taskRows);
     return;
   }
+  if (state.view === "versions") {
+    renderVersions(document.querySelector("#view-content"));
+    return;
+  }
   document.querySelector("#view-content").replaceChildren(
     Object.assign(document.createElement("p"), {
       textContent: `${taskRows.length} task rows match current filters`,
     }),
   );
+}
+
+function renderVersions(container) {
+  const revisionsBySha = new Map();
+  for (const comparison of payload.versions) {
+    revisionsBySha.set(comparison.left_revision.sha, comparison.left_revision);
+    revisionsBySha.set(comparison.right_revision.sha, comparison.right_revision);
+  }
+  revisionsBySha.set(payload.study.symnav_revision.sha, payload.study.symnav_revision);
+  const revisions = orderVersions([...revisionsBySha.values()], payload.study.first_parent_positions ?? {});
+  const timeline = document.createElement("ol");
+  timeline.className = "version-timeline";
+  for (const revision of revisions) {
+    const item = document.createElement("li");
+    item.className = revision.kind === "main" ? "main" : "preview";
+    const kind = document.createElement("span");
+    kind.className = "version-kind";
+    kind.textContent = revision.kind === "main" ? "main" : `PR #${revision.pull_request}`;
+    const sha = document.createElement("code");
+    sha.textContent = revision.sha.slice(0, 12);
+    const sequence = document.createElement("small");
+    sequence.textContent = `evaluation ${revision.evaluation_sequence}`;
+    item.append(kind, sha, sequence);
+    timeline.append(item);
+  }
+  const comparison = document.createElement("section");
+  comparison.className = "version-compare inset";
+  const heading = document.createElement("h3");
+  heading.textContent = "Compatible revision comparison";
+  comparison.append(heading);
+  if (!payload.versions.length) {
+    comparison.append(emptyState("No second compatible study revision is available yet."));
+    container.replaceChildren(timeline, comparison);
+    return;
+  }
+  state.versionLeft ??= payload.versions[0].left_revision.sha;
+  state.versionRight ??= payload.versions[0].right_revision.sha;
+  const selectors = document.createElement("div");
+  selectors.className = "version-selectors";
+  const revisionOptions = revisions.map((revision) => [revision.sha, versionLabel(revision)]);
+  const left = selectFilter("Earlier revision", "versionLeft", revisionOptions);
+  const right = selectFilter("Later revision", "versionRight", revisionOptions);
+  selectors.append(left, right);
+  comparison.append(selectors);
+  const selected = payload.versions.find(
+    (item) =>
+      (item.left_revision.sha === state.versionLeft && item.right_revision.sha === state.versionRight) ||
+      (item.left_revision.sha === state.versionRight && item.right_revision.sha === state.versionLeft),
+  );
+  if (!selected) {
+    comparison.append(emptyState("These revisions do not have a compatible precomputed comparison."));
+  } else {
+    const reversed = selected.left_revision.sha === state.versionRight;
+    const estimate = selected.uplift_difference;
+    const direction = reversed ? -1 : 1;
+    comparison.append(
+      definitionList({
+        uplift_difference: formatMetric(estimate.value * direction, "uplift"),
+        lower_95: formatMetric((reversed ? -estimate.upper_95 : estimate.lower_95), "uplift"),
+        upper_95: formatMetric((reversed ? -estimate.lower_95 : estimate.upper_95), "uplift"),
+        left_study: reversed ? selected.right_study_id : selected.left_study_id,
+        right_study: reversed ? selected.left_study_id : selected.right_study_id,
+      }),
+      versionIntervalPlot(estimate, direction),
+    );
+  }
+  container.replaceChildren(timeline, comparison);
+}
+
+function versionIntervalPlot(estimate, direction) {
+  const width = 620;
+  const svg = svgElement("svg", { viewBox: `0 0 ${width} 86`, role: "img" });
+  svg.classList.add("chart");
+  const scale = (value) => 24 + ((value + 0.5) / 1) * (width - 48);
+  const lower = direction > 0 ? estimate.lower_95 : -estimate.upper_95;
+  const upper = direction > 0 ? estimate.upper_95 : -estimate.lower_95;
+  svg.append(
+    svgElement("line", { x1: scale(0), x2: scale(0), y1: 8, y2: 76, class: "zero-line" }),
+    svgElement("line", { x1: scale(lower), x2: scale(upper), y1: 42, y2: 42, class: "interval primary" }),
+    svgElement("circle", { cx: scale(estimate.value * direction), cy: 42, r: 7, class: "point primary" }),
+  );
+  return svg;
+}
+
+function versionLabel(revision) {
+  const kind = revision.kind === "main" ? "main" : `PR #${revision.pull_request}`;
+  return `${kind} · ${revision.sha.slice(0, 12)} · eval ${revision.evaluation_sequence}`;
 }
 
 function renderToolUsage(container, taskRows) {

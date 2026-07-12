@@ -65,6 +65,14 @@ main { padding: 1.25rem max(2rem, 5vw) 4rem; }
 .usage-card { border: 1px solid var(--line); border-radius: .8rem; padding: 1rem; }
 .usage-card.full-symnav { background: var(--accent-soft); border-color: var(--accent); }
 .usage-card h3 { font-size: 1rem; margin: 0; }
+.version-timeline { display: flex; gap: 1rem; list-style: none; margin: 0 0 1rem; overflow-x: auto; padding: .5rem; }
+.version-timeline li { border: 1px solid var(--line); border-radius: .7rem; display: grid; gap: .25rem; min-width: 10rem; padding: .8rem; position: relative; }
+.version-timeline li.main { border-top: 4px solid var(--stock); }
+.version-timeline li.preview { border-top: 4px solid #f59f00; }
+.version-kind { color: var(--muted); font-size: .72rem; font-weight: 700; text-transform: uppercase; }
+.version-timeline small { color: var(--muted); }
+.version-selectors { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
+.version-compare { margin-top: 0; }
 .hint { color: var(--muted); font-size: .9rem; }
 .heatmap { border-collapse: separate; border-spacing: 3px; display: block; max-height: 68vh; overflow: auto; width: 100%; }
 .heatmap th { background: var(--panel); font-size: .72rem; max-width: 14rem; padding: .5rem; position: sticky; text-align: left; top: 0; z-index: 2; }
