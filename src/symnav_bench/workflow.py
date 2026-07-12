@@ -8,6 +8,7 @@ import hashlib
 import tarfile
 from typing import Literal
 from typing import Sequence
+from typing import TextIO
 
 from symnav_bench.batch_plan import BatchPlan
 from symnav_bench.batch_plan import plan_balanced_batches, plan_trial_slots
@@ -90,6 +91,31 @@ def _is_secret_path(path: Path) -> bool:
         marker in normalized
         for marker in (".env", "secret", "credential", "auth.json", "token")
     )
+
+
+def write_github_matrix(batch: BatchPlan, out: TextIO) -> None:
+    if len(batch.slots) > 256:
+        raise ValueError("GitHub matrix cannot exceed 256 cells")
+    json.dump(
+        {
+            "include": [
+                {
+                    "study_id": slot.study_id,
+                    "configuration_id": slot.configuration_id,
+                    "batch_id": batch.batch_id,
+                    "slot_id": slot.slot_id,
+                    "condition": slot.condition,
+                    "task": slot.task,
+                    "repetition": slot.repetition,
+                }
+                for slot in batch.slots
+            ]
+        },
+        out,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    out.write("\n")
 
 
 def select_batches(

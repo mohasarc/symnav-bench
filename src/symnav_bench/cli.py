@@ -19,7 +19,7 @@ from symnav_bench.run.runner import CellRunner, subprocess_pier_run
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, parse_conditions
 from symnav_bench.study import StudyManifest, protocol_mapping
-from symnav_bench.suite import SuiteManifest, build_suite_manifest
+from symnav_bench.suite import SuiteManifest, TaskManifestEntry, build_suite_manifest
 from symnav_bench.tasks import list_tasks
 
 
@@ -35,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
             return report_command(args)
         if args.command == "plan-study":
             return plan_study_command(args)
+        if args.command == "batch-matrix":
+            return batch_matrix_command(args)
     except Exception as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -74,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
     plan_study_parser.add_argument("--study", type=Path, required=True)
     plan_study_parser.add_argument("--tasks-dir", type=Path, required=True)
     plan_study_parser.add_argument("--json", action="store_true")
+    batch_matrix_parser = subcommands.add_parser("batch-matrix")
+    batch_matrix_parser.add_argument("--study", type=Path, required=True)
+    batch_matrix_parser.add_argument("--suite", type=Path, required=True)
+    batch_matrix_parser.add_argument("--configuration", required=True)
+    batch_matrix_parser.add_argument("--mode", choices=("run-next", "run-all", "resume"), required=True)
+    batch_matrix_parser.add_argument("--existing-study", type=Path)
     return parser
 
 
@@ -145,6 +153,41 @@ def plan_study_command(args: argparse.Namespace) -> int:
         f"{study.id}: {len(suite.tasks)} tasks, "
         f"{len(study.configurations)} configurations, {len(slots)} slots"
     )
+    return 0
+
+
+def batch_matrix_command(args: argparse.Namespace) -> int:
+    from symnav_bench.report.study_dataset import StudyDataset
+    from symnav_bench.workflow import select_batches, write_github_matrix
+
+    study = StudyManifest.load(args.study)
+    suite_data = json.loads(args.suite.read_text(encoding="utf-8"))
+    suite = SuiteManifest(
+        deep_swe_sha=suite_data["deep_swe_sha"],
+        tasks=tuple(TaskManifestEntry(**task) for task in suite_data["tasks"]),
+        fingerprint=suite_data["fingerprint"],
+    )
+    existing = (
+        StudyDataset.load(args.existing_study)
+        if args.existing_study is not None and args.existing_study.exists()
+        else None
+    )
+    selection = select_batches(
+        study,
+        suite,
+        existing,
+        configuration_id=args.configuration,
+        mode=args.mode,
+    )
+    payload = []
+    for batch in selection.batches:
+        from io import StringIO
+
+        matrix = StringIO()
+        write_github_matrix(batch, matrix)
+        payload.append({"batch_id": batch.batch_id, "matrix": json.loads(matrix.getvalue())})
+    json.dump({"study_id": selection.study_id, "configuration_id": selection.configuration_id, "batches": payload}, sys.stdout, separators=(",", ":"), sort_keys=True)
+    sys.stdout.write("\n")
     return 0
 
 
