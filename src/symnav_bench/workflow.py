@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import shutil
+import hashlib
+import tarfile
 from typing import Literal
 from typing import Sequence
 
@@ -26,6 +28,13 @@ class BatchSelection:
     batches: tuple[BatchPlan, ...]
 
 
+@dataclass(frozen=True)
+class ArtifactPointer:
+    archive: str
+    internal_path: str
+    sha256: str
+
+
 def merge_attempt_artifacts(
     study_dir: Path,
     artifact_dirs: Sequence[Path],
@@ -45,6 +54,42 @@ def merge_attempt_artifacts(
                 shutil.copy2(source, target)
             merged.append(AttemptRecord.load(source))
     return sorted(merged, key=lambda attempt: attempt.identity.attempt_id)
+
+
+def build_raw_archive(
+    artifact_dirs: Sequence[Path],
+    archive_path: Path,
+) -> dict[str, ArtifactPointer]:
+    if archive_path.exists():
+        raise FileExistsError(f"archive already exists: {archive_path}")
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    internal_paths: dict[str, str] = {}
+    with tarfile.open(archive_path, "w:gz") as archive:
+        for artifact_dir in artifact_dirs:
+            attempt_path = next(iter(sorted(artifact_dir.rglob("attempt.json"))), None)
+            if attempt_path is None:
+                continue
+            raw = json.loads(attempt_path.read_text(encoding="utf-8"))
+            attempt_id = str(raw["identity"]["attempt_id"])
+            internal_path = f"attempts/{attempt_id}"
+            internal_paths[attempt_id] = internal_path
+            for source in sorted(path for path in artifact_dir.rglob("*") if path.is_file()):
+                if _is_secret_path(source.relative_to(artifact_dir)):
+                    continue
+                archive.add(source, arcname=f"{internal_path}/{source.relative_to(artifact_dir).as_posix()}")
+    checksum = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    return {
+        attempt_id: ArtifactPointer(archive_path.name, internal_path, checksum)
+        for attempt_id, internal_path in internal_paths.items()
+    }
+
+
+def _is_secret_path(path: Path) -> bool:
+    normalized = path.as_posix().lower()
+    return any(
+        marker in normalized
+        for marker in (".env", "secret", "credential", "auth.json", "token")
+    )
 
 
 def select_batches(
