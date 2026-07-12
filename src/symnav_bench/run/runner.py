@@ -89,7 +89,7 @@ class CellRunner:
     def _slot(self, identity: CellIdentity, condition_kind: str, variant: str) -> TrialSlot:
         condition = condition_kind if condition_kind == "stock" or variant == "all" else variant
         study_id = os.environ.get("SYMNAV_BENCH_STUDY_ID", "adhoc")
-        configuration_id = identity.spec.key
+        configuration_id = os.environ.get("SYMNAV_BENCH_CONFIGURATION_ID", identity.spec.key)
         repetition = identity.rep + 1
         stable_slot_id = slot_id(
             study_id,

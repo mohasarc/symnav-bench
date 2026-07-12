@@ -77,11 +77,25 @@ def normalize_attempt(
         adoption=summarize_adoption(events, _agent_steps(result)),
         written_at=datetime.now(UTC).isoformat(),
     )
+    attempt_json = attempt.to_json()
+    attempt_json.update(
+        {
+            "protocol_fingerprint": _environment_value("SYMNAV_BENCH_PROTOCOL_FINGERPRINT"),
+            "suite_fingerprint": _environment_value("SYMNAV_BENCH_SUITE_FINGERPRINT"),
+            "batch_id": _environment_value("SYMNAV_BENCH_BATCH_ID"),
+        }
+    )
     (attempt_dir / "attempt.json").write_text(
-        json.dumps(attempt.to_json(), indent=2, sort_keys=True) + "\n",
+        json.dumps(attempt_json, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return attempt
+
+
+def _environment_value(name: str) -> str | None:
+    import os
+
+    return os.environ.get(name)
 
 
 def normalize_trial(

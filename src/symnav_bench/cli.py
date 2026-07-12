@@ -41,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
             return merge_results_command(args)
         if args.command == "raw-archive":
             return raw_archive_command(args)
+        if args.command == "study-report":
+            return study_report_command(args)
     except Exception as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -92,6 +94,8 @@ def build_parser() -> argparse.ArgumentParser:
     raw_archive_parser = subcommands.add_parser("raw-archive")
     raw_archive_parser.add_argument("--archive", type=Path, required=True)
     raw_archive_parser.add_argument("--artifact", type=Path, action="append", required=True)
+    study_report_parser = subcommands.add_parser("study-report")
+    study_report_parser.add_argument("--study-dir", type=Path, required=True)
     return parser
 
 
@@ -233,6 +237,26 @@ def raw_archive_command(args: argparse.Namespace) -> int:
         sort_keys=True,
     )
     sys.stdout.write("\n")
+    return 0
+
+
+def study_report_command(args: argparse.Namespace) -> int:
+    import shutil
+
+    from symnav_bench.report.render import write_report
+    from symnav_bench.report.study_dataset import StudyDataset
+
+    dashboard_dir = args.study_dir / "dashboard"
+    write_report(StudyDataset.load(args.study_dir), dashboard_dir)
+    data_dir = args.study_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(dashboard_dir / "analysis-v1.json", data_dir / "study.json")
+    csv_dir = dashboard_dir / "exports" / "csv"
+    parquet_dir = dashboard_dir / "exports" / "parquet"
+    for source in sorted(csv_dir.glob("*.csv")):
+        shutil.copy2(source, data_dir / source.name)
+    for source in sorted(parquet_dir.glob("*.parquet")):
+        shutil.copy2(source, data_dir / source.name)
     return 0
 
 
