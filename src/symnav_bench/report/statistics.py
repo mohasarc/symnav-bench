@@ -110,6 +110,10 @@ def _validate_pair(
     stock: ConfigurationMetrics,
     treatment: ConfigurationMetrics,
 ) -> None:
+    if not isinstance(stock, ConfigurationMetrics) or not isinstance(
+        treatment, ConfigurationMetrics
+    ):
+        raise TypeError("external references cannot be used as stock or treatment")
     if stock.key.condition != "stock":
         raise ValueError("baseline must be stock")
     stock_configuration = (
