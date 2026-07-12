@@ -1,0 +1,74 @@
+{
+  "bundle_metadata": {
+    "skill_files": [
+      {
+        "destination": "/app/.agents/integrations/symnav/variants/overview/skill/SKILL.md"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "step_id": 7,
+      "timestamp": "2026-07-11T18:00:00Z",
+      "tool_calls": [
+        {
+          "tool_call_id": "outer-1",
+          "function_name": "exec",
+          "arguments": {
+            "code": "const result = await tools.exec_command({ cmd: \"symnav overview src/a.ts\", workdir: \"/app\", yield_time_ms: 10000, max_output_tokens: 2000 });\ntext(result.output);"
+          }
+        }
+      ],
+      "observation": {
+        "results": [
+          {
+            "source_call_id": "outer-1",
+            "content": "Process exited with code 0\nOutput:\nsrc/a.ts\n"
+          }
+        ]
+      }
+    },
+    {
+      "step_id": 8,
+      "timestamp": "2026-07-11T18:00:01Z",
+      "tool_calls": [
+        {
+          "tool_call_id": "outer-2",
+          "function_name": "exec",
+          "arguments": {
+            "code": "const search = await tools.exec_command({cmd: \"rg -n Foo src\"});\nconst read = await tools.exec_command({ cmd: \"sed -n '1,80p' src/a.ts\" });\ntext(search.output);\ntext(read.output);"
+          }
+        }
+      ],
+      "observation": {
+        "results": [
+          {
+            "source_call_id": "outer-2",
+            "content": "Process exited with code 0\nOutput:\nsearch and read output\n"
+          }
+        ]
+      }
+    },
+    {
+      "step_id": 9,
+      "timestamp": "2026-07-11T18:00:02Z",
+      "tool_calls": [
+        {
+          "tool_call_id": "outer-3",
+          "function_name": "exec",
+          "arguments": {
+            "code": "const patch = await tools.apply_patch(\"*** Begin Patch\\n*** Update File: src/a.ts\\n@@\\n-old\\n+new\\n*** End Patch\");\ntext(patch);"
+          }
+        }
+      ],
+      "observation": {
+        "results": [
+          {
+            "source_call_id": "outer-3",
+            "content": "Done!"
+          }
+        ]
+      }
+    }
+  ]
+}
