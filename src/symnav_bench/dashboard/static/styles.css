@@ -52,6 +52,15 @@ main { padding: 1.25rem max(2rem, 5vw) 4rem; }
 .data-table th { color: var(--muted); font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
 .data-table tr.full-symnav { background: var(--accent-soft); }
 .empty-state { background: #f5f6f2; border: 1px dashed var(--line); border-radius: .7rem; color: var(--muted); padding: 1rem; }
+.efficiency-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(32rem, 100%), 1fr)); }
+.inset { background: #f8f8f3; border: 1px solid var(--line); border-radius: .8rem; margin: 0; padding: 1rem; }
+.axis { stroke: #7f8b86; stroke-width: 1; }
+.axis-label, .resource-label { fill: var(--muted); font: 11px ui-sans-serif, system-ui, sans-serif; }
+.frontier-line { stroke: var(--accent); stroke-dasharray: 5 4; stroke-width: 2; }
+.frontier-point { fill: var(--stock); stroke: var(--panel); stroke-width: 2; }
+.frontier-point.primary { fill: var(--accent); stroke: #063f2e; }
+.resource-bar { fill: var(--stock); opacity: .72; }
+.resource-bar.primary { fill: var(--accent); opacity: 1; }
 .hint { color: var(--muted); font-size: .9rem; }
 .heatmap { border-collapse: separate; border-spacing: 3px; display: block; max-height: 68vh; overflow: auto; width: 100%; }
 .heatmap th { background: var(--panel); font-size: .72rem; max-width: 14rem; padding: .5rem; position: sticky; text-align: left; top: 0; z-index: 2; }

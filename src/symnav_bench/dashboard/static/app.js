@@ -47,11 +47,145 @@ function render() {
     renderStatistics(document.querySelector("#view-content"));
     return;
   }
+  if (state.view === "efficiency") {
+    renderEfficiency(document.querySelector("#view-content"), taskRows);
+    return;
+  }
   document.querySelector("#view-content").replaceChildren(
     Object.assign(document.createElement("p"), {
       textContent: `${taskRows.length} task rows match current filters`,
     }),
   );
+}
+
+function renderEfficiency(container, taskRows) {
+  const configurations = payload.configurations.filter(
+    (item) =>
+      (state.configurationId === "all" || item.id === state.configurationId) &&
+      (state.condition === "all" || item.condition === state.condition),
+  );
+  const resources = configurations.map((configuration) => {
+    const rows = taskRows.filter(
+      (row) => row.configuration_id === configuration.id && row.condition === configuration.condition,
+    );
+    return {
+      id: `${configuration.id}:${configuration.condition}`,
+      label: configuration.label,
+      full: configuration.full_symnav,
+      score: configuration.metrics.performance_score,
+      totalCost: configuration.metrics.cost,
+      costPerSuccess: configuration.metrics.cost_per_success,
+      meanCost: meanPresent(rows.map((row) => row.metrics.cost)),
+      outputTokens: meanPresent(rows.map((row) => row.metrics.output_tokens)),
+      steps: meanPresent(rows.map((row) => row.metrics.steps)),
+      duration: meanPresent(rows.map((row) => row.metrics.duration)),
+    };
+  });
+  const grid = document.createElement("div");
+  grid.className = "efficiency-grid";
+  const frontierSection = document.createElement("section");
+  frontierSection.className = "chart-section inset";
+  const frontierHeading = document.createElement("h3");
+  frontierHeading.textContent = "Performance / cost frontier";
+  frontierSection.append(frontierHeading, frontierPlot(resources));
+  const distributionSection = document.createElement("section");
+  distributionSection.className = "chart-section inset";
+  const distributionHeading = document.createElement("h3");
+  distributionHeading.textContent = "All-trial resource means";
+  distributionSection.append(distributionHeading, resourcePlot(resources));
+  grid.append(frontierSection, distributionSection);
+  container.replaceChildren(grid);
+}
+
+function frontierPlot(rows) {
+  const present = rows.filter((row) => row.totalCost != null && row.score != null);
+  if (!present.length) return emptyState("Cost and performance data are not available yet.");
+  const width = 620;
+  const height = 330;
+  const margin = { left: 56, right: 18, top: 18, bottom: 42 };
+  const maxCost = Math.max(...present.map((row) => row.totalCost), 1);
+  const x = (value) => margin.left + (value / maxCost) * (width - margin.left - margin.right);
+  const y = (value) => height - margin.bottom - value * (height - margin.top - margin.bottom);
+  const svg = svgElement("svg", { viewBox: `0 0 ${width} ${height}`, role: "img" });
+  svg.classList.add("chart");
+  svg.append(
+    svgElement("line", { x1: margin.left, x2: width - margin.right, y1: height - margin.bottom, y2: height - margin.bottom, class: "axis" }),
+    svgElement("line", { x1: margin.left, x2: margin.left, y1: margin.top, y2: height - margin.bottom, class: "axis" }),
+  );
+  const frontier = [];
+  let best = -Infinity;
+  for (const row of [...present].sort((left, right) => left.totalCost - right.totalCost)) {
+    if (row.score > best) {
+      frontier.push(row);
+      best = row.score;
+    }
+  }
+  if (frontier.length > 1) {
+    svg.append(svgElement("polyline", {
+      points: frontier.map((row) => `${x(row.totalCost)},${y(row.score)}`).join(" "),
+      class: "frontier-line",
+      fill: "none",
+    }));
+  }
+  for (const row of present) {
+    const point = svgElement("circle", {
+      cx: x(row.totalCost),
+      cy: y(row.score),
+      r: row.full ? 8 : 6,
+      class: row.full ? "frontier-point primary" : "frontier-point",
+    });
+    const title = svgElement("title", {});
+    title.textContent = `${row.label}: ${formatMetric(row.score, "performance_score")} at $${row.totalCost.toFixed(2)}`;
+    point.append(title);
+    svg.append(point);
+  }
+  const xLabel = svgElement("text", { x: width / 2, y: height - 8, class: "axis-label" });
+  xLabel.textContent = "Total cost (USD)";
+  const yLabel = svgElement("text", { x: 8, y: 14, class: "axis-label" });
+  yLabel.textContent = "Performance";
+  svg.append(xLabel, yLabel);
+  return svg;
+}
+
+function resourcePlot(rows) {
+  const metrics = [
+    ["meanCost", "Mean cost"],
+    ["outputTokens", "Output tokens"],
+    ["steps", "Agent steps"],
+    ["duration", "Duration"],
+  ];
+  const width = 620;
+  const height = Math.max(180, rows.length * metrics.length * 20 + 54);
+  const svg = svgElement("svg", { viewBox: `0 0 ${width} ${height}`, role: "img" });
+  svg.classList.add("chart");
+  let index = 0;
+  for (const [key, label] of metrics) {
+    const max = Math.max(...rows.map((row) => row[key] ?? 0), 1);
+    for (const row of rows) {
+      const y = 20 + index * 20;
+      const bar = svgElement("rect", {
+        x: 160,
+        y: y - 11,
+        width: ((row[key] ?? 0) / max) * 430,
+        height: 13,
+        rx: 3,
+        class: row.full ? "resource-bar primary" : "resource-bar",
+      });
+      const title = svgElement("title", {});
+      title.textContent = `${label} · ${row.label}: ${row[key] == null ? "missing" : formatNumber(row[key])}`;
+      bar.append(title);
+      const text = svgElement("text", { x: 2, y, class: "resource-label" });
+      text.textContent = `${label} · ${row.label}`;
+      svg.append(text, bar);
+      index += 1;
+    }
+  }
+  return svg;
+}
+
+function meanPresent(values) {
+  const present = values.filter((value) => value != null);
+  return present.length ? present.reduce((sum, value) => sum + value, 0) / present.length : null;
 }
 
 function renderOverview(container) {
