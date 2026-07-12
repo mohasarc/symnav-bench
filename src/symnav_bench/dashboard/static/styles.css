@@ -23,6 +23,8 @@ h1 { font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -.055em; margin: .2rem 0
 .tabs button { background: transparent; border: 0; border-bottom: 3px solid transparent; color: var(--muted); cursor: pointer; padding: .8rem .75rem; white-space: nowrap; }
 .tabs button[aria-current="page"] { border-color: var(--accent); color: var(--ink); font-weight: 700; }
 .filters { display: flex; flex-wrap: wrap; gap: .75rem; padding: 1rem max(2rem, 5vw) 0; }
+.filter { color: var(--muted); display: grid; font-size: .72rem; font-weight: 700; gap: .25rem; letter-spacing: .04em; text-transform: uppercase; }
+.filter select { background: var(--panel); border: 1px solid var(--line); border-radius: .5rem; color: var(--ink); min-width: 10rem; padding: .55rem .7rem; text-transform: none; }
 main { padding: 1.25rem max(2rem, 5vw) 4rem; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; box-shadow: 0 12px 30px rgb(23 35 31 / 6%); padding: 1.4rem; }
 .panel h2 { margin-top: 0; }
