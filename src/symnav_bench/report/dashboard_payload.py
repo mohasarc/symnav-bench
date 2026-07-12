@@ -71,7 +71,10 @@ def build_dashboard_payload(
             _configuration_mapping(item, configuration_ids[_identity(item)])
             for item in metrics
         ),
-        comparisons=tuple(_comparison_mapping(item) for item in comparisons),
+        comparisons=tuple(
+            _comparison_mapping(item, configuration_ids[_identity(item.treatment)])
+            for item in comparisons
+        ),
         tasks=tuple(
             _task_mapping(
                 task,
@@ -204,9 +207,13 @@ def _task_mapping(
     }
 
 
-def _comparison_mapping(comparison: ConditionComparison) -> dict[str, Any]:
+def _comparison_mapping(
+    comparison: ConditionComparison,
+    base_configuration_id: str,
+) -> dict[str, Any]:
     return {
         "configuration_id": comparison.configuration_id,
+        "base_configuration_id": base_configuration_id,
         "condition": comparison.treatment.key.condition,
         "primary": comparison.primary,
         "uplift": asdict(comparison.uplift) if comparison.uplift is not None else None,
