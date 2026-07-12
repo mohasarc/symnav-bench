@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from symnav_bench.report.study_dataset import StudyDataset
+from symnav_bench.report.study_dataset import compute_configuration_metrics
 
 
 PROTOCOL = {
@@ -111,7 +112,87 @@ def test_keeps_retryable_history_and_selects_first_scored_attempt(tmp_path: Path
     assert result.scored_attempt.identity.attempt_id == "first"
 
 
-def write_study_directory(path: Path) -> Path:
+def test_primary_coverage_and_binary_score_require_four_trials_in_both_conditions(
+    tmp_path: Path,
+) -> None:
+    study_dir = write_study_directory(tmp_path, tasks=("task-a", "task-b"))
+    outcomes = {
+        "task-a": ["passed", "passed", "passed", "failed"],
+        "task-b": ["passed", "failed", "failed", "failed"],
+    }
+    write_metric_attempts(study_dir, outcomes, outcomes)
+
+    dataset = StudyDataset.load(study_dir)
+    stock_key = next(key for key in dataset.configurations() if key.condition == "stock")
+    metrics = compute_configuration_metrics(dataset, stock_key)
+
+    assert metrics.coverage.complete_tasks == 2
+    assert metrics.coverage.total_tasks == 2
+    assert metrics.coverage.provisional is False
+    assert metrics.coverage.pilot is False
+    assert [task.pass_fraction for task in metrics.tasks] == [0.75, 0.25]
+    assert metrics.performance_score == 0.5
+    assert metrics.repetition_scores == (1.0, 0.5, 0.5, 0.0)
+    assert sum(metrics.repetition_scores) / 4 == metrics.performance_score
+
+
+def test_incomplete_tasks_are_provisional_pilots_and_do_not_become_zero(
+    tmp_path: Path,
+) -> None:
+    study_dir = write_study_directory(tmp_path, tasks=("task-a", "task-b"))
+    stock = {
+        "task-a": ["passed", "passed", "passed", "failed"],
+        "task-b": ["failed", "failed", "failed"],
+    }
+    symnav = {
+        "task-a": ["passed", "passed", "passed", "failed"],
+        "task-b": ["failed", "failed", "failed", "failed"],
+    }
+    write_metric_attempts(study_dir, stock, symnav)
+
+    dataset = StudyDataset.load(study_dir)
+    stock_key = next(key for key in dataset.configurations() if key.condition == "stock")
+    metrics = compute_configuration_metrics(dataset, stock_key)
+
+    assert metrics.coverage.complete_tasks == 1
+    assert metrics.coverage.provisional is True
+    assert metrics.coverage.pilot is True
+    assert len(metrics.coverage.unresolved_slot_ids) == 1
+    assert metrics.performance_score == 0.75
+    assert metrics.repetition_scores == (1.0, 1.0, 1.0, 0.0)
+
+
+def test_partial_rewards_are_averaged_within_task_then_across_tasks(
+    tmp_path: Path,
+) -> None:
+    study_dir = write_study_directory(tmp_path, tasks=("task-a", "task-b"))
+    outcomes = {
+        "task-a": ["passed"] * 4,
+        "task-b": ["failed"] * 4,
+    }
+    write_metric_attempts(study_dir, outcomes, outcomes)
+    for path in study_dir.glob("**/attempt.json"):
+        attempt = json.loads(path.read_text(encoding="utf-8"))
+        if attempt["slot"]["condition"] != "stock":
+            continue
+        if attempt["slot"]["task"] == "task-a":
+            attempt["rewards"] = {"f2p": 1.0, "p2p": 0.8, "partial": 0.6}
+        elif attempt["slot"]["repetition"] == 1:
+            attempt["rewards"] = {"f2p": 0.0, "p2p": 0.2, "partial": 0.4}
+        else:
+            attempt["rewards"] = {}
+        path.write_text(json.dumps(attempt), encoding="utf-8")
+
+    dataset = StudyDataset.load(study_dir)
+    stock_key = next(key for key in dataset.configurations() if key.condition == "stock")
+    metrics = compute_configuration_metrics(dataset, stock_key)
+
+    assert metrics.mean_f2p == 0.5
+    assert metrics.mean_p2p == 0.5
+    assert metrics.mean_partial == 0.5
+
+
+def write_study_directory(path: Path, tasks: tuple[str, ...] = ("task",)) -> Path:
     protocol = copy.deepcopy(PROTOCOL)
     protocol_fingerprint = fingerprint(protocol)
     study = {
@@ -138,7 +219,8 @@ def write_study_directory(path: Path) -> Path:
         "deep_swe_sha": "a" * 40,
         "fingerprint": SUITE_FINGERPRINT,
         "tasks": [
-            {"slug": "task", "language": "typescript", "checksum": TASK_CHECKSUM}
+            {"slug": task, "language": "typescript", "checksum": task_checksum(task)}
+            for task in tasks
         ],
     }
     (path / "suite.json").write_text(json.dumps(suite), encoding="utf-8")
@@ -150,8 +232,9 @@ def attempt_mapping(
     repetition: int,
     attempt_id: str,
     outcome: str,
+    task: str = "task",
 ) -> dict:
-    slot_id = slot_identity(condition, repetition)
+    slot_id = slot_identity(condition, repetition, task)
     return {
         "schema_version": 3,
         "identity": {
@@ -165,7 +248,7 @@ def attempt_mapping(
             "study_id": "study",
             "configuration_id": "configuration",
             "condition": condition,
-            "task": "task",
+            "task": task,
             "repetition": repetition,
             "slot_id": slot_id,
         },
@@ -190,7 +273,7 @@ def attempt_mapping(
             "agent_version": "0.31.0",
             "bundle_id": None if condition == "stock" else "full",
             "bundle_hash": None if condition == "stock" else BUNDLE_HASH,
-            "task_checksum": TASK_CHECKSUM,
+            "task_checksum": task_checksum(task),
             "prompt_rule_hash": "6" * 64,
             "requested_model": "model",
             "requested_effort": "medium",
@@ -251,12 +334,12 @@ def mutate_mismatch(attempt: dict, mismatch: str) -> None:
         attempt["identity"]["slot_id"] = "other-slot"
 
 
-def slot_identity(condition: str, repetition: int) -> str:
+def slot_identity(condition: str, repetition: int, task: str = "task") -> str:
     value = {
         "study_id": "study",
         "configuration_id": "configuration",
         "condition": condition,
-        "task": "task",
+        "task": task,
         "repetition": repetition,
     }
     canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
@@ -266,3 +349,25 @@ def slot_identity(condition: str, repetition: int) -> str:
 def fingerprint(value: dict) -> str:
     canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def task_checksum(task: str) -> str:
+    return TASK_CHECKSUM if task == "task" else hashlib.sha256(task.encode()).hexdigest()
+
+
+def write_metric_attempts(
+    study_dir: Path,
+    stock: dict[str, list[str]],
+    symnav: dict[str, list[str]],
+) -> None:
+    for condition, tasks in (("stock", stock), ("symnav", symnav)):
+        for task, outcomes in tasks.items():
+            for repetition, outcome in enumerate(outcomes, start=1):
+                attempt = attempt_mapping(
+                    condition,
+                    repetition,
+                    f"{condition}-{task}-{repetition}",
+                    outcome,
+                    task,
+                )
+                write_attempt(study_dir, "batch-1", attempt)
