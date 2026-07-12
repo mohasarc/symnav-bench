@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import re
 import shlex
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 
 TIMEOUT_MARKERS: tuple[str, ...] = (
@@ -61,46 +61,107 @@ class AdoptionSummary:
     command_counts: dict[str, int]
 
 
-def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
+def extract_tool_events(trajectory: Mapping[str, Any]) -> list[NormalizedToolEvent]:
     steps = trajectory.get("steps")
     if not isinstance(steps, list):
         return []
-    commands: list[ExecutedCommand] = []
-    commands_by_session: dict[str, str] = {}
+    events: list[NormalizedToolEvent] = []
+    skill_paths = _bundle_skill_paths(trajectory)
     for step_index, step in enumerate(steps):
-        if not isinstance(step, dict):
+        if not isinstance(step, Mapping):
             continue
         for tool_call in _tool_calls(step):
-            tool = str(tool_call.get("function_name") or tool_call.get("name") or "")
-            args = tool_call.get("arguments")
-            if not isinstance(args, dict):
-                args = {}
-            command = _primary_command(tool, args)
+            outer_tool = _tool_name(tool_call)
+            args = _tool_arguments(tool_call)
             observation = _observation_text(step, tool_call)
-            if not command and tool == "write_stdin":
-                command = commands_by_session.get(str(args.get("session_id") or ""), "")
-            session_id = _running_session_id(observation)
-            if command and session_id:
-                commands_by_session[session_id] = command
-            exit_code = _exit_code(observation)
-            output = _truncate_output(observation)
-            commands.append(
-                ExecutedCommand(
-                    step_id=_step_id(step, step_index),
-                    timestamp=str(step.get("timestamp") or ""),
-                    tool=tool,
-                    command=command,
-                    args=dict(args),
-                    tags=classify(tool, command),
-                    timed_out=_timed_out(observation),
-                    exit_code=exit_code,
-                    succeeded=None if exit_code is None else exit_code == 0,
-                    output_chars=len(observation),
-                    output_truncated=len(observation) > MAX_COMMAND_OUTPUT_CHARS,
-                    output=output,
+            if outer_tool == "exec":
+                nested = extract_nested_exec_events(
+                    {
+                        "step_id": _step_id(step, step_index),
+                        "timestamp": _timestamp(step),
+                        "outer_tool": outer_tool,
+                        "arguments": args,
+                        "observation": observation,
+                        "skill_paths": skill_paths,
+                    }
                 )
+                first_sequence = len(events)
+                events.extend(replace(event, sequence=first_sequence + index) for index, event in enumerate(nested))
+                continue
+            event = _normalized_event(
+                step_id=_step_id(step, step_index),
+                sequence=len(events),
+                timestamp=_timestamp(step),
+                outer_tool=outer_tool,
+                tool=outer_tool,
+                args=args,
+                observation=observation,
+                skill_paths=skill_paths,
             )
-    return commands
+            events.append(event)
+    return events
+
+
+def extract_nested_exec_events(event: Mapping[str, Any]) -> list[NormalizedToolEvent]:
+    args = event.get("arguments")
+    source = _exec_source(args)
+    observation = str(event.get("observation") or "")
+    outer_tool = str(event.get("outer_tool") or "exec")
+    step_id = _integer(event.get("step_id"), 0)
+    timestamp = event.get("timestamp")
+    normalized_timestamp = str(timestamp) if timestamp is not None else None
+    raw_skill_paths = event.get("skill_paths")
+    skill_paths = {
+        str(path)
+        for path in raw_skill_paths
+        if isinstance(path, str)
+    } if isinstance(raw_skill_paths, (set, tuple, list)) else set()
+    try:
+        calls = _nested_calls(source)
+    except ValueError as error:
+        return [
+            _normalized_event(
+                step_id=step_id,
+                sequence=0,
+                timestamp=normalized_timestamp,
+                outer_tool=outer_tool,
+                tool=outer_tool,
+                args=_mapping(args),
+                observation=observation,
+                skill_paths=skill_paths,
+                parser_warning=str(error),
+            )
+        ]
+    if not calls:
+        return [
+            _normalized_event(
+                step_id=step_id,
+                sequence=0,
+                timestamp=normalized_timestamp,
+                outer_tool=outer_tool,
+                tool=outer_tool,
+                args=_mapping(args),
+                observation=observation,
+                skill_paths=skill_paths,
+            )
+        ]
+    return [
+        _normalized_event(
+            step_id=step_id,
+            sequence=sequence,
+            timestamp=normalized_timestamp,
+            outer_tool=outer_tool,
+            tool=tool,
+            args=nested_args,
+            observation=observation,
+            skill_paths=skill_paths,
+        )
+        for sequence, (tool, nested_args) in enumerate(calls)
+    ]
+
+
+def extract_commands(trajectory: dict[str, Any]) -> list[ExecutedCommand]:
+    return extract_tool_events(trajectory)
 
 
 def classify(tool: str, command: str) -> tuple[str, ...]:
@@ -129,23 +190,84 @@ def write_commands_jsonl(commands: list[ExecutedCommand], path: Path) -> None:
             stream.write(json.dumps(row, sort_keys=True) + "\n")
 
 
-def _tool_calls(step: dict[str, Any]) -> list[dict[str, Any]]:
+def _tool_calls(step: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     calls = step.get("tool_calls")
     if isinstance(calls, list):
-        return [call for call in calls if isinstance(call, dict)]
+        return [call for call in calls if isinstance(call, Mapping)]
     return []
+
+
+def _normalized_event(
+    *,
+    step_id: int,
+    sequence: int,
+    timestamp: str | None,
+    outer_tool: str,
+    tool: str,
+    args: dict[str, Any],
+    observation: str,
+    skill_paths: set[str],
+    parser_warning: str | None = None,
+) -> NormalizedToolEvent:
+    command = _primary_command(tool, args)
+    kind = _event_kind(tool, command, args, skill_paths)
+    exit_code = _exit_code(observation)
+    return NormalizedToolEvent(
+        step_id=step_id,
+        sequence=sequence,
+        timestamp=timestamp,
+        outer_tool=outer_tool,
+        tool=tool,
+        kind=kind,
+        command=command,
+        args=args,
+        tags=_event_tags(tool, command, args, kind),
+        session_id=args.get("session_id") or _running_session_id(observation),
+        exit_code=exit_code,
+        succeeded=None if exit_code is None else exit_code == 0,
+        timed_out=_timed_out(observation),
+        output=_truncate_output(observation),
+        output_chars=len(observation),
+        output_truncated=len(observation) > MAX_COMMAND_OUTPUT_CHARS,
+        parser_warning=parser_warning,
+    )
+
+
+def _tool_name(tool_call: Mapping[str, Any]) -> str:
+    name = str(tool_call.get("function_name") or tool_call.get("name") or "")
+    return name.rsplit(".", 1)[-1].rsplit("__", 1)[-1]
+
+
+def _tool_arguments(tool_call: Mapping[str, Any]) -> dict[str, Any]:
+    arguments = tool_call.get("arguments")
+    if isinstance(arguments, Mapping):
+        return dict(arguments)
+    if isinstance(arguments, str):
+        return {"code": arguments}
+    return {}
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _timestamp(step: Mapping[str, Any]) -> str | None:
+    value = step.get("timestamp")
+    return str(value) if value is not None else None
 
 
 def _primary_command(tool: str, args: dict[str, Any]) -> str:
     if tool == "exec_command":
         return str(args.get("cmd") or "")
+    if tool == "apply_patch":
+        return str(args.get("patch") or "")
     for key in ("command", "cmd", "pattern", "file_path", "path"):
         if key in args:
             return str(args.get(key) or "")
     return ""
 
 
-def _step_id(step: dict[str, Any], fallback: int) -> int:
+def _step_id(step: Mapping[str, Any], fallback: int) -> int:
     value = step.get("step_id", step.get("id", fallback))
     try:
         return int(value)
@@ -153,7 +275,7 @@ def _step_id(step: dict[str, Any], fallback: int) -> int:
         return fallback
 
 
-def _observation_text(step: dict[str, Any], tool_call: dict[str, Any]) -> str:
+def _observation_text(step: Mapping[str, Any], tool_call: Mapping[str, Any]) -> str:
     chunks: list[str] = []
     observation = step.get("observation")
     call_id = tool_call.get("tool_call_id")
@@ -176,6 +298,273 @@ def _observation_text(step: dict[str, Any], tool_call: dict[str, Any]) -> str:
             if isinstance(value, str):
                 chunks.append(value)
     return "\n".join(chunks)
+
+
+def _event_kind(
+    tool: str,
+    command: str,
+    args: Mapping[str, Any],
+    skill_paths: set[str],
+) -> ToolEventKind:
+    lowered = tool.lower()
+    if lowered == "skill" or _is_skill_read(command, args, skill_paths):
+        return "skill"
+    if lowered in {"exec_command", "bash", "write_stdin"}:
+        return "shell"
+    if lowered in {"read"}:
+        return "read"
+    if lowered in {"grep", "glob"}:
+        return "search"
+    if lowered in {"apply_patch", "edit", "write"}:
+        return "patch"
+    return "other"
+
+
+def _event_tags(
+    tool: str,
+    command: str,
+    args: Mapping[str, Any],
+    kind: ToolEventKind,
+) -> tuple[str, ...]:
+    if kind == "skill":
+        skill = str(args.get("skill") or "symnav")
+        return (f"skill:{skill}",)
+    classified = classify(tool, command)
+    if classified != ("other",):
+        return classified
+    if kind in {"read", "search", "patch"}:
+        return (kind,)
+    return classified
+
+
+def _is_skill_read(command: str, args: Mapping[str, Any], skill_paths: set[str]) -> bool:
+    candidate = command or str(args.get("file_path") or args.get("path") or "")
+    if any(path and path in candidate for path in skill_paths):
+        return True
+    normalized = candidate.replace("\\", "/")
+    return bool(
+        re.search(r"/\.agents/skills/symnav/SKILL\.md$", normalized)
+        or re.search(r"/\.agents/integrations/symnav/variants/[^/]+/skill/SKILL\.md$", normalized)
+    )
+
+
+def _bundle_skill_paths(value: Mapping[str, Any]) -> set[str]:
+    paths: set[str] = set()
+
+    def visit(item: Any, under_skill_files: bool = False) -> None:
+        if isinstance(item, Mapping):
+            for key, nested in item.items():
+                visit(nested, under_skill_files or str(key) == "skill_files")
+            return
+        if isinstance(item, list):
+            for nested in item:
+                visit(nested, under_skill_files)
+            return
+        if under_skill_files and isinstance(item, str) and item.endswith("/SKILL.md"):
+            paths.add(item)
+
+    for key in ("bundle_metadata", "integration_bundle", "bundle"):
+        metadata = value.get(key)
+        if metadata is not None:
+            visit(metadata)
+    return paths
+
+
+def _exec_source(arguments: Any) -> str:
+    if isinstance(arguments, str):
+        return arguments
+    if isinstance(arguments, Mapping):
+        for key in ("code", "source", "input"):
+            value = arguments.get(key)
+            if isinstance(value, str):
+                return value
+    return ""
+
+
+def _nested_calls(source: str) -> list[tuple[str, dict[str, Any]]]:
+    call_pattern = re.compile(r"tools\.(exec_command|write_stdin|apply_patch)\s*\(")
+    calls: list[tuple[str, dict[str, Any]]] = []
+    position = 0
+    while match := call_pattern.search(source, position):
+        closing = _closing_parenthesis(source, match.end())
+        if closing is None:
+            raise ValueError(f"could not parse nested {match.group(1)} call")
+        raw_arguments = source[match.end() : closing].strip()
+        try:
+            parsed = _JavascriptLiteralParser(raw_arguments).parse()
+        except ValueError as error:
+            raise ValueError(f"could not parse nested {match.group(1)} arguments: {error}") from error
+        tool = match.group(1)
+        if tool == "apply_patch":
+            if not isinstance(parsed, str):
+                raise ValueError("could not parse nested apply_patch arguments: expected string")
+            arguments = {"patch": parsed}
+        elif isinstance(parsed, dict):
+            arguments = parsed
+        else:
+            raise ValueError(f"could not parse nested {tool} arguments: expected object")
+        calls.append((tool, arguments))
+        position = closing + 1
+    if not calls and any(f"tools.{tool}" in source for tool in ("exec_command", "write_stdin", "apply_patch")):
+        raise ValueError("could not parse nested tool call")
+    return calls
+
+
+def _closing_parenthesis(source: str, start: int) -> int | None:
+    depth = 1
+    quote: str | None = None
+    escaped = False
+    for index in range(start, len(source)):
+        character = source[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+            continue
+        if character in {'"', "'", "`"}:
+            quote = character
+        elif character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+class _JavascriptLiteralParser:
+    def __init__(self, source: str) -> None:
+        self._source = source
+        self._position = 0
+
+    def parse(self) -> Any:
+        value = self._value()
+        self._whitespace()
+        if self._position != len(self._source):
+            raise ValueError("unexpected trailing input")
+        return value
+
+    def _value(self) -> Any:
+        self._whitespace()
+        character = self._peek()
+        if character == "{":
+            return self._object()
+        if character == "[":
+            return self._array()
+        if character in {'"', "'", "`"}:
+            return self._string()
+        number = re.match(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?", self._source[self._position :])
+        if number:
+            token = number.group(0)
+            self._position += len(token)
+            return float(token) if any(marker in token for marker in (".", "e", "E")) else int(token)
+        identifier = self._identifier()
+        if identifier == "true":
+            return True
+        if identifier == "false":
+            return False
+        if identifier in {"null", "undefined"}:
+            return None
+        raise ValueError(f"unsupported value {identifier!r}")
+
+    def _object(self) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        self._expect("{")
+        self._whitespace()
+        if self._consume("}"):
+            return result
+        while True:
+            self._whitespace()
+            key = self._string() if self._peek() in {'"', "'", "`"} else self._identifier()
+            if not key:
+                raise ValueError("missing object key")
+            self._whitespace()
+            self._expect(":")
+            result[key] = self._value()
+            self._whitespace()
+            if self._consume("}"):
+                return result
+            self._expect(",")
+            self._whitespace()
+            if self._consume("}"):
+                return result
+
+    def _array(self) -> list[Any]:
+        result: list[Any] = []
+        self._expect("[")
+        self._whitespace()
+        if self._consume("]"):
+            return result
+        while True:
+            result.append(self._value())
+            self._whitespace()
+            if self._consume("]"):
+                return result
+            self._expect(",")
+
+    def _string(self) -> str:
+        quote = self._peek()
+        if quote not in {'"', "'", "`"}:
+            raise ValueError("expected string")
+        self._position += 1
+        characters: list[str] = []
+        escapes = {"n": "\n", "r": "\r", "t": "\t", "b": "\b", "f": "\f"}
+        while self._position < len(self._source):
+            character = self._source[self._position]
+            self._position += 1
+            if character == quote:
+                return "".join(characters)
+            if character != "\\":
+                characters.append(character)
+                continue
+            if self._position >= len(self._source):
+                raise ValueError("unterminated escape")
+            escaped = self._source[self._position]
+            self._position += 1
+            if escaped == "u":
+                digits = self._source[self._position : self._position + 4]
+                if len(digits) != 4 or not re.fullmatch(r"[0-9a-fA-F]{4}", digits):
+                    raise ValueError("invalid unicode escape")
+                characters.append(chr(int(digits, 16)))
+                self._position += 4
+            else:
+                characters.append(escapes.get(escaped, escaped))
+        raise ValueError("unterminated string")
+
+    def _identifier(self) -> str:
+        match = re.match(r"[A-Za-z_$][A-Za-z0-9_$-]*", self._source[self._position :])
+        if not match:
+            return ""
+        identifier = match.group(0)
+        self._position += len(identifier)
+        return identifier
+
+    def _whitespace(self) -> None:
+        while self._position < len(self._source) and self._source[self._position].isspace():
+            self._position += 1
+
+    def _peek(self) -> str:
+        return self._source[self._position] if self._position < len(self._source) else ""
+
+    def _consume(self, expected: str) -> bool:
+        if self._peek() != expected:
+            return False
+        self._position += 1
+        return True
+
+    def _expect(self, expected: str) -> None:
+        if not self._consume(expected):
+            raise ValueError(f"expected {expected!r}")
+
+
+def _integer(value: Any, fallback: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _truncate_output(text: str) -> str:
