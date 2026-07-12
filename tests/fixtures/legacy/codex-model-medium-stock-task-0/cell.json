@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "identity": {
+    "agent": "codex",
+    "model": "model",
+    "effort": "medium",
+    "condition": "stock",
+    "task": "task",
+    "rep": 0
+  },
+  "status": "completed",
+  "error": null,
+  "solved": true,
+  "rewards": {
+    "f2p": 0.0
+  },
+  "usage": {},
+  "timing": {},
+  "agent_version": null,
+  "harness": {},
+  "command_counts": {}
+}

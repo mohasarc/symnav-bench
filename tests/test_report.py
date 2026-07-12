@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -9,6 +10,7 @@ from symnav_bench.cells.cell import Cell
 from symnav_bench.report.cell_set import ArmKey, CellSet
 from symnav_bench.report.comparison import compare, planned_comparisons
 from symnav_bench.report.render import write_report
+from symnav_bench.report.study_dataset import import_legacy_cells
 from symnav_bench.run_spec import AgentSpec
 
 
@@ -31,6 +33,28 @@ def test_legacy_cell_loader_rejects_unknown_schema(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="unsupported legacy cell schema version 999"):
         Cell.load(path)
+
+
+def test_legacy_import_derives_binary_result_and_marks_missing_metadata() -> None:
+    cells_dir = Path(__file__).parent / "fixtures" / "legacy"
+
+    legacy = import_legacy_cells(cells_dir)
+
+    assert len(legacy.cells) == 1
+    assert legacy.cells[0].solved is False
+    assert any("missing metadata" in warning for warning in legacy.warnings)
+
+
+def test_legacy_import_stays_outside_study_configuration_groups(tmp_path) -> None:
+    cell = _cell("stock", "task", True)
+    path = tmp_path / cell.identity.dirname()
+    path.mkdir()
+    (path / "cell.json").write_text(json.dumps(cell.to_json()), encoding="utf-8")
+
+    legacy = import_legacy_cells(tmp_path)
+
+    assert type(legacy).__name__ == "LegacyDataset"
+    assert not hasattr(legacy, "configurations")
 
 
 def test_cell_set_warns_when_f2p_solved_but_p2p_regresses(tmp_path) -> None:
