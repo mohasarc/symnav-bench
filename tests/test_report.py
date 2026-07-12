@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from symnav_bench.cell_identity import CellIdentity
 from symnav_bench.cells.cell import Cell
 from symnav_bench.report.cell_set import ArmKey, CellSet
@@ -18,6 +20,17 @@ def test_cell_set_loads_by_cell_json_and_groups_arms(tmp_path) -> None:
     loaded = CellSet.load(tmp_path)
     assert len(loaded.cells) == 1
     assert list(loaded.arms())[0].condition_label == "stock"
+
+
+def test_legacy_cell_loader_rejects_unknown_schema(tmp_path) -> None:
+    cell = _cell("stock", "task", True)
+    data = cell.to_json()
+    data["schema_version"] = 999
+    path = tmp_path / "cell.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unsupported legacy cell schema version 999"):
+        Cell.load(path)
 
 
 def test_cell_set_warns_when_f2p_solved_but_p2p_regresses(tmp_path) -> None:
