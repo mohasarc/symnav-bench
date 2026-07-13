@@ -66,6 +66,21 @@ def test_merge_attempt_artifacts_appends_without_overwriting(tmp_path: Path) -> 
     assert len(list((study_dir / "attempts/slot-a").glob("*.json"))) == 2
 
 
+def test_merge_attempt_artifacts_accepts_a_rerun_after_archive_pointer_enrichment(tmp_path: Path) -> None:
+    study_dir = tmp_path / "study"
+    artifact = write_artifact(tmp_path / "artifact", "slot-a", "attempt-a")
+
+    merge_attempt_artifacts(study_dir, [artifact])
+    target = study_dir / "attempts/slot-a/attempt-a.json"
+    data = json.loads(target.read_text(encoding="utf-8"))
+    data["artifact"] = {"archive": "batch.tar.gz", "internal_path": "attempts/attempt-a", "sha256": "a" * 64}
+    target.write_text(json.dumps(data), encoding="utf-8")
+
+    merge_attempt_artifacts(study_dir, [artifact])
+
+    assert json.loads(target.read_text(encoding="utf-8"))["artifact"]["archive"] == "batch.tar.gz"
+
+
 def test_raw_archive_is_deterministic_and_maps_attempts(tmp_path: Path) -> None:
     artifact = write_artifact(tmp_path / "artifact", "slot-a", "attempt-a")
     (artifact / "raw").mkdir()

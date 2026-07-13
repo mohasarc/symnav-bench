@@ -49,12 +49,22 @@ def merge_attempt_artifacts(
             target = study_dir / "attempts" / slot_id / f"{attempt_id}.json"
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
-                if target.read_bytes() != source.read_bytes():
+                if not _same_attempt_content(target, source):
                     raise FileExistsError(f"attempt already exists with different content: {target}")
             else:
                 shutil.copy2(source, target)
             merged.append(AttemptRecord.load(source))
     return sorted(merged, key=lambda attempt: attempt.identity.attempt_id)
+
+
+def _same_attempt_content(existing: Path, incoming: Path) -> bool:
+    existing_data = json.loads(existing.read_text(encoding="utf-8"))
+    incoming_data = json.loads(incoming.read_text(encoding="utf-8"))
+    if not isinstance(existing_data, dict) or not isinstance(incoming_data, dict):
+        return existing_data == incoming_data
+    existing_data.pop("artifact", None)
+    incoming_data.pop("artifact", None)
+    return existing_data == incoming_data
 
 
 def build_raw_archive(
