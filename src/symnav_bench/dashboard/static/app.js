@@ -4,6 +4,7 @@ import {
   buildTrialDrawer,
   createInitialState,
   filterTaskRows,
+  formatPerformanceScore,
   orderVersions,
 } from "./state.js";
 
@@ -26,12 +27,13 @@ document.querySelector("#tabs").addEventListener("click", ({ target }) => {
   render();
 });
 
-renderFilters();
+initializeStudySwitcher();
 
 function render() {
+  renderFilters();
   const heading = document.querySelector(`[data-view="${state.view}"]`).textContent;
-  view.innerHTML = `<section class="panel"><h2>${heading}</h2><div id="view-content"></div></section>`;
-  const taskRows = filterTaskRows(payload.tasks, state);
+  view.innerHTML = `<section class="view-section"><h2>${heading}</h2><div id="view-content"></div></section>`;
+  const taskRows = state.view === "matrix" ? filterTaskRows(payload.tasks, state) : payload.tasks;
   if (state.view === "matrix") {
     renderMatrix(document.querySelector("#view-content"), taskRows);
     return;
@@ -236,6 +238,7 @@ function renderLegacy(container) {
 }
 
 function filteredAttempts() {
+  if (state.view !== "matrix") return payload.attempts;
   return payload.attempts.filter(
     (attempt) =>
       (state.configurationId === "all" || attempt.configuration_id === state.configurationId) &&
@@ -963,7 +966,8 @@ function configurationLabel(key) {
 }
 
 function formatMetric(value, metric) {
-  if (["performance_score", "f2p", "p2p", "partial"].includes(metric)) {
+  if (metric === "performance_score") return formatPerformanceScore(value);
+  if (["f2p", "p2p", "partial"].includes(metric)) {
     return `${Math.round(value * 100)}%`;
   }
   if (metric === "uplift") return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} pp`;
@@ -983,6 +987,11 @@ function formatNumber(value) {
 }
 
 function renderFilters() {
+  filters.hidden = state.view !== "matrix";
+  if (filters.hidden) {
+    filters.replaceChildren();
+    return;
+  }
   const configurationOptions = [
     ["all", "All configurations"],
     ...uniqueBy(payload.configurations, "id").map((item) => [
@@ -1006,6 +1015,34 @@ function renderFilters() {
       ["configurations", "Configurations as rows"],
     ]),
   );
+}
+
+async function initializeStudySwitcher() {
+  const switcher = document.querySelector("#study-switcher");
+  addStudyOption(switcher, payload.study.id, payload.study.id, true);
+  switcher.addEventListener("change", () => {
+    if (switcher.value) window.location.assign(`../${encodeURIComponent(switcher.value)}/`);
+  });
+  try {
+    const response = await fetch("../../studies.json");
+    if (!response.ok) return;
+    const catalog = await response.json();
+    if (!Array.isArray(catalog.studies)) return;
+    switcher.replaceChildren();
+    for (const study of catalog.studies) {
+      if (!study || typeof study.id !== "string") continue;
+      const status = study.status === "complete" ? "complete" : "provisional";
+      addStudyOption(switcher, study.id, `${study.id} — ${status}`, study.id === payload.study.id);
+    }
+  } catch {}
+}
+
+function addStudyOption(switcher, value, label, selected) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  option.selected = selected;
+  switcher.append(option);
 }
 
 function selectFilter(label, stateKey, options) {

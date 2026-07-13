@@ -32,6 +32,10 @@ export function filterTaskRows(rows, state) {
   );
 }
 
+export function formatPerformanceScore(value) {
+  return `${(value * 100).toFixed(2)}%`;
+}
+
 export function orderConfigurations(configurations) {
   const conditionOrder = (condition) =>
     condition === "stock" ? 0 : condition === "symnav" ? 1 : 2;

@@ -14,7 +14,12 @@
         <h1 id="study-title">Study analysis</h1>
         <p id="study-subtitle" class="subtitle"></p>
       </div>
-      <div id="coverage-badge" class="status-badge"></div>
+      <div class="study-navigation">
+        <a class="all-studies-link" href="../../">All studies</a>
+        <label class="study-switcher-label" for="study-switcher">Study</label>
+        <select id="study-switcher" aria-label="Switch study"></select>
+        <div id="coverage-badge" class="status-badge"></div>
+      </div>
     </header>
     <nav id="tabs" class="tabs" aria-label="Analysis views">
       <button data-view="overview" aria-current="page">Overview</button>
@@ -28,7 +33,7 @@
       <button data-view="trials">Trials</button>
       <button data-view="legacy">Legacy</button>
     </nav>
-    <section id="filters" class="filters" aria-label="Dashboard filters"></section>
+    <section id="filters" class="filters" aria-label="Task matrix filters" hidden></section>
     <main id="view" tabindex="-1"></main>
     <aside id="drawer" class="drawer" hidden aria-label="Trial details"></aside>
     <script id="dashboard-payload" type="application/json">__DASHBOARD_PAYLOAD__</script>

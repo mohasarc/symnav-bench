@@ -295,11 +295,15 @@ def test_study_report_exports_compatible_metrics_without_legacy_data(
     html = (tmp_path / "report" / "index.html").read_text(encoding="utf-8")
     assert 'href="./static/styles.css"' in html
     assert 'src="./static/app.js"' in html
+    assert 'href="../../">All studies</a>' in html
+    assert 'id="study-switcher"' in html
     assert '"id": "study"' in html
     assert "Legacy benchmark cells stay separate" not in html
     assert (tmp_path / "report" / "analysis-v1.json").exists()
     assert (tmp_path / "report" / "exports" / "csv" / "tasks.csv").exists()
     assert (tmp_path / "report" / "exports" / "parquet" / "tasks.parquet").exists()
+    app = (tmp_path / "report" / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'fetch("../../studies.json")' in app
 
 
 def test_study_report_carries_archived_attempt_into_trial_drawer_payload(

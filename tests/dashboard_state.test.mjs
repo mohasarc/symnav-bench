@@ -7,6 +7,7 @@ import {
   buildTrialDrawer,
   createInitialState,
   filterTaskRows,
+  formatPerformanceScore,
   orderConfigurations,
   orderVersions,
   pivotMatrix,
@@ -36,6 +37,11 @@ test("metric selector exposes effectiveness, resources, and failures", () => {
       "failures",
     ],
   );
+});
+
+test("performance scores preserve two decimal places", () => {
+  assert.equal(formatPerformanceScore(0.357142857), "35.71%");
+  assert.equal(formatPerformanceScore(0), "0.00%");
 });
 
 test("task matrix defaults to task rows with adjacent stock and full symnav", () => {
