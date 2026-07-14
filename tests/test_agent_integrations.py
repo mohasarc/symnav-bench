@@ -119,6 +119,24 @@ def test_full_codex_installs_shared_rules_bundle_rules_and_skill_byte_for_byte(t
     assert _encoded(bundle.claude_hook.source) not in combined
 
 
+def test_full_codex_injects_skill_body_into_agents_md_not_a_skill_file(tmp_path: Path) -> None:
+    bundle = SymnavIntegrationCatalog.load(_write_checkout(tmp_path)).bundle("full")
+
+    steps = SymnavCodex(
+        logs_dir=tmp_path / "logs",
+        symnav_sha="a" * 40,
+        integration_bundle=bundle,
+    ).install_spec().steps
+
+    skill_b64 = _encoded(bundle.skill_files[0].source)
+    skill_destination = bundle.skill_files[0].destination.as_posix()
+    injecting = [step.run for step in steps if skill_b64 in step.run]
+
+    assert injecting, "skill content is not injected anywhere"
+    assert all("/app/AGENTS.md" in command for command in injecting)
+    assert all(skill_destination not in command for command in injecting)
+
+
 def test_full_claude_installs_every_bundle_asset_byte_for_byte(tmp_path: Path) -> None:
     bundle = SymnavIntegrationCatalog.load(_write_checkout(tmp_path)).bundle("full")
 
@@ -140,6 +158,25 @@ def test_full_claude_installs_every_bundle_asset_byte_for_byte(tmp_path: Path) -
         bundle.claude_hook,
     ):
         assert _encoded(integration_file.source) in combined
+
+
+def test_full_claude_injects_skill_body_into_agents_and_claude_md(tmp_path: Path) -> None:
+    bundle = SymnavIntegrationCatalog.load(_write_checkout(tmp_path)).bundle("full")
+
+    steps = SymnavClaudeCode(
+        logs_dir=tmp_path / "logs",
+        symnav_sha="a" * 40,
+        integration_bundle=bundle,
+    ).install_spec().steps
+
+    skill_b64 = _encoded(bundle.skill_files[0].source)
+    skill_destination = bundle.skill_files[0].destination.as_posix()
+    injecting = [step.run for step in steps if skill_b64 in step.run]
+
+    assert len(injecting) == 2
+    assert any("/app/AGENTS.md" in command for command in injecting)
+    assert any("/app/CLAUDE.md" in command for command in injecting)
+    assert all(skill_destination not in command for command in injecting)
 
 
 def test_variant_wrapper_rejects_sibling_command(tmp_path: Path) -> None:

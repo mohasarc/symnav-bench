@@ -112,11 +112,15 @@ def write_integration_file_step(
     )
 
 
+AGENT_RULES_PATH = "/app/AGENTS.md"
+CLAUDE_RULES_PATH = "/app/CLAUDE.md"
+
+
 def codex_integration_steps(bundle: RuntimeAgentIntegrationBundle, *, treatment: bool) -> tuple[InstallStep, ...]:
     steps = [append_integration_file_step(bundle.shared_rules)]
     if treatment:
         steps.append(append_integration_file_step(bundle.rules))
-        steps.extend(write_integration_file_step(file) for file in bundle.skill_files)
+        steps.extend(_skill_injection_steps(bundle, AGENT_RULES_PATH))
     return tuple(steps)
 
 
@@ -125,8 +129,8 @@ def claude_integration_steps(bundle: RuntimeAgentIntegrationBundle, *, treatment
         append_integration_file_step(bundle.shared_rules),
         append_integration_file_step(
             bundle.shared_rules,
-            destination="/app/CLAUDE.md",
-            unless_same_file_as="/app/AGENTS.md",
+            destination=CLAUDE_RULES_PATH,
+            unless_same_file_as=AGENT_RULES_PATH,
         ),
     ]
     if treatment:
@@ -135,15 +139,36 @@ def claude_integration_steps(bundle: RuntimeAgentIntegrationBundle, *, treatment
                 append_integration_file_step(bundle.rules),
                 append_integration_file_step(
                     bundle.rules,
-                    destination="/app/CLAUDE.md",
-                    unless_same_file_as="/app/AGENTS.md",
+                    destination=CLAUDE_RULES_PATH,
+                    unless_same_file_as=AGENT_RULES_PATH,
                 ),
-                *(write_integration_file_step(file) for file in bundle.skill_files),
+                *_skill_injection_steps(bundle, AGENT_RULES_PATH),
+                *_skill_injection_steps(
+                    bundle,
+                    CLAUDE_RULES_PATH,
+                    unless_same_file_as=AGENT_RULES_PATH,
+                ),
                 write_integration_file_step(bundle.claude_settings),
                 write_integration_file_step(bundle.claude_hook),
             ]
         )
     return tuple(steps)
+
+
+def _skill_injection_steps(
+    bundle: RuntimeAgentIntegrationBundle,
+    destination: str,
+    *,
+    unless_same_file_as: str | None = None,
+) -> tuple[InstallStep, ...]:
+    return tuple(
+        append_integration_file_step(
+            file,
+            destination=destination,
+            unless_same_file_as=unless_same_file_as,
+        )
+        for file in bundle.skill_files
+    )
 
 
 def symnav_command_wrapper(allowed_commands: tuple[str, ...], upstream: str) -> str:
