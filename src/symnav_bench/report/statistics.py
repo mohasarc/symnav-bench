@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from itertools import product
 from random import Random
 from statistics import mean
 
-from symnav_bench.report.study_dataset import ConfigurationMetrics
+from symnav_bench.report.study_dataset import ConfigurationMetrics, TaskMetrics
 from symnav_bench.study import SymnavRevision
 
 
@@ -42,6 +42,8 @@ class ConditionComparison:
     study_id: str | None
     symnav_revision: SymnavRevision | None
     suite_fingerprint: str | None
+    f2p_task_deltas: tuple[TaskDelta, ...] = field(default_factory=tuple)
+    f2p_uplift: Estimate | None = None
 
 
 def compare_condition_to_stock(
@@ -61,29 +63,19 @@ def compare_condition_to_stock(
     treatment_tasks = {task.task: task for task in treatment.tasks}
     if stock_tasks.keys() != treatment_tasks.keys():
         raise ValueError("stock and treatment task sets must match")
-    task_deltas = tuple(
-        TaskDelta(
-            task=task,
-            stock=stock_score,
-            treatment=treatment_score,
-            delta=treatment_score - stock_score,
-        )
-        for task in stock_tasks
-        if (stock_score := stock_tasks[task].pass_fraction) is not None
-        and (treatment_score := treatment_tasks[task].pass_fraction) is not None
-    )
     complete = _complete(stock) and _complete(treatment)
-    point = mean(task.delta for task in task_deltas) if task_deltas else None
-    uplift = (
-        _cluster_bootstrap(task_deltas, point, bootstrap_samples, seed)
-        if complete and point is not None
-        else None
-    )
+
+    task_deltas = _task_deltas(stock_tasks, treatment_tasks, lambda task: task.pass_fraction)
+    uplift = _uplift(task_deltas, complete, bootstrap_samples, seed)
     randomization_p_value = (
         _paired_randomization(task_deltas, randomization_samples, seed)
         if uplift is not None
         else None
     )
+
+    f2p_task_deltas = _task_deltas(stock_tasks, treatment_tasks, lambda task: task.mean_f2p)
+    f2p_uplift = _uplift(f2p_task_deltas, complete, bootstrap_samples, seed)
+
     demonstrated_improvement = uplift is not None and uplift.lower_95 > 0
     return ConditionComparison(
         configuration_id=_comparison_id(treatment),
@@ -103,7 +95,39 @@ def compare_condition_to_stock(
         study_id=study_id,
         symnav_revision=symnav_revision,
         suite_fingerprint=suite_fingerprint,
+        f2p_task_deltas=f2p_task_deltas,
+        f2p_uplift=f2p_uplift,
     )
+
+
+def _task_deltas(
+    stock_tasks: dict[str, TaskMetrics],
+    treatment_tasks: dict[str, TaskMetrics],
+    score: Callable[[TaskMetrics], float | None],
+) -> tuple[TaskDelta, ...]:
+    return tuple(
+        TaskDelta(
+            task=task,
+            stock=stock_score,
+            treatment=treatment_score,
+            delta=treatment_score - stock_score,
+        )
+        for task in stock_tasks
+        if (stock_score := score(stock_tasks[task])) is not None
+        and (treatment_score := score(treatment_tasks[task])) is not None
+    )
+
+
+def _uplift(
+    task_deltas: tuple[TaskDelta, ...],
+    complete: bool,
+    bootstrap_samples: int,
+    seed: int,
+) -> Estimate | None:
+    point = mean(task.delta for task in task_deltas) if task_deltas else None
+    if not complete or point is None:
+        return None
+    return _cluster_bootstrap(task_deltas, point, bootstrap_samples, seed)
 
 
 def _validate_pair(

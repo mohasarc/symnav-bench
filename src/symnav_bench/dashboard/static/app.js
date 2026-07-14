@@ -1,4 +1,5 @@
 import {
+  ADOPTION_FILTERS,
   METRICS,
   buildMatrix,
   buildTrialDrawer,
@@ -6,6 +7,7 @@ import {
   filterTaskRows,
   formatPerformanceScore,
   orderVersions,
+  rowsWithAdoptionFilter,
 } from "./state.js";
 
 const payload = JSON.parse(document.querySelector("#dashboard-payload").textContent);
@@ -35,7 +37,8 @@ function render() {
   view.innerHTML = `<section class="view-section"><h2>${heading}</h2><div id="view-content"></div></section>`;
   const taskRows = state.view === "matrix" ? filterTaskRows(payload.tasks, state) : payload.tasks;
   if (state.view === "matrix") {
-    renderMatrix(document.querySelector("#view-content"), taskRows);
+    const adoptionRows = rowsWithAdoptionFilter(taskRows, payload.attempts, state.adoptionFilter);
+    renderMatrix(document.querySelector("#view-content"), adoptionRows);
     return;
   }
   if (state.view === "overview") {
@@ -656,6 +659,10 @@ function renderStatistics(container) {
       losses: comparison.losses,
       demonstrated: comparison.demonstrated_improvement,
       material: comparison.material_improvement,
+      "f2p uplift (secondary)": comparison.f2p_uplift?.value == null ? "Pending" : formatMetric(comparison.f2p_uplift.value, "uplift"),
+      "f2p 95% CI": comparison.f2p_uplift == null
+        ? "Pending"
+        : `${formatMetric(comparison.f2p_uplift.lower_95, "uplift")} to ${formatMetric(comparison.f2p_uplift.upper_95, "uplift")}`,
     });
     section.append(heading, evidence, deltaPlot(comparison));
     grid.append(section);
@@ -1032,6 +1039,7 @@ function renderFilters() {
     selectFilter("Configuration", "configurationId", configurationOptions),
     selectFilter("Condition", "condition", conditionOptions),
     selectFilter("Metric", "metric", METRICS.map(({ id, label }) => [id, label])),
+    selectFilter("Adoption", "adoptionFilter", ADOPTION_FILTERS.map(({ id, label }) => [id, label])),
     selectFilter("Matrix axes", "pivot", [
       ["tasks", "Tasks as rows"],
       ["configurations", "Configurations as rows"],

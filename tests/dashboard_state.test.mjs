@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ADOPTION_FILTERS,
   METRICS,
   buildMatrix,
   buildTrialDrawer,
@@ -11,6 +12,7 @@ import {
   orderConfigurations,
   orderVersions,
   pivotMatrix,
+  rowsWithAdoptionFilter,
 } from "../src/symnav_bench/dashboard/static/state.js";
 
 const tasks = [
@@ -106,6 +108,46 @@ test("cell drawer contains scored trials, retries, metrics, and artifact links",
   assert.equal(drawer.scoredTrials[0].artifacts.archive_sha256, "a".repeat(64));
 });
 
+test("adoption filter recomputes task score from only symnav-invoked or idle trials", () => {
+  const row = task("symnav", "alpha", 0.75);
+  const attempts = [
+    adoptionAttempt(1, true, 1),
+    adoptionAttempt(2, true, 0),
+    adoptionAttempt(3, false, 1),
+    adoptionAttempt(4, false, 1),
+  ];
+
+  assert.equal(rowsWithAdoptionFilter([row], attempts, "all")[0], row);
+
+  const invoked = rowsWithAdoptionFilter([row], attempts, "invoked")[0];
+  assert.equal(invoked.metrics.performance_score, 0.5);
+  assert.equal(invoked.trials.length, 2);
+
+  const idle = rowsWithAdoptionFilter([row], attempts, "idle")[0];
+  assert.equal(idle.metrics.performance_score, 1);
+  assert.equal(idle.trials.length, 2);
+});
+
+test("adoption filter yields no scored trials for stock rows under invoked", () => {
+  const row = task("stock", "alpha", 0.5);
+  const attempts = [
+    { ...adoptionAttempt(1, false, 1), condition: "stock" },
+    { ...adoptionAttempt(2, false, 0), condition: "stock" },
+  ];
+
+  const invoked = rowsWithAdoptionFilter([row], attempts, "invoked")[0];
+
+  assert.equal(invoked.metrics.performance_score, null);
+  assert.equal(invoked.trials.length, 0);
+});
+
+test("adoption filter selector exposes all, invoked, and idle", () => {
+  assert.deepEqual(
+    ADOPTION_FILTERS.map(({ id }) => id),
+    ["all", "invoked", "idle"],
+  );
+});
+
 test("version ordering uses first parent for main and sequence for previews", () => {
   const versions = orderVersions(
     [
@@ -141,6 +183,18 @@ function task(condition, name, score, complete = true) {
     },
     trials: [],
     adoption: { mean_symnav_calls: condition === "symnav" ? 2 : 0 },
+  };
+}
+
+function adoptionAttempt(repetition, usedSymnav, reward) {
+  return {
+    configuration_id: "config",
+    condition: "symnav",
+    task: "alpha",
+    repetition,
+    outcome: reward === 1 ? "passed" : "failed",
+    rewards: { reward, f2p: reward },
+    adoption: { used_symnav: usedSymnav },
   };
 }
 

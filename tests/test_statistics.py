@@ -25,6 +25,38 @@ def test_computes_task_paired_uplift() -> None:
     assert (comparison.wins, comparison.ties, comparison.losses) == (1, 1, 0)
 
 
+def test_secondary_f2p_uplift_tracks_continuous_scores_not_binary() -> None:
+    # Binary pass_fraction ties, but continuous f2p favors the treatment: the
+    # secondary metric captures near-miss improvement the binary reward hides.
+    stock = metrics(
+        "stock",
+        {"alpha": 0.0, "beta": 0.0},
+        f2p_scores={"alpha": 0.80, "beta": 0.90},
+    )
+    treatment = metrics(
+        "symnav",
+        {"alpha": 0.0, "beta": 0.0},
+        f2p_scores={"alpha": 0.95, "beta": 0.95},
+    )
+
+    comparison = compare_condition_to_stock(stock, treatment, seed=7)
+
+    assert comparison.uplift is not None and comparison.uplift.value == 0.0
+    assert comparison.f2p_uplift is not None
+    assert comparison.f2p_uplift.value == pytest.approx(0.10)
+    assert [round(task.delta, 2) for task in comparison.f2p_task_deltas] == [0.15, 0.05]
+
+
+def test_secondary_f2p_uplift_absent_without_f2p_scores() -> None:
+    stock = metrics("stock", {"alpha": 0.25, "beta": 0.5})
+    treatment = metrics("symnav", {"alpha": 0.75, "beta": 0.5})
+
+    comparison = compare_condition_to_stock(stock, treatment, seed=7)
+
+    assert comparison.f2p_uplift is None
+    assert comparison.f2p_task_deltas == ()
+
+
 def test_cluster_bootstrap_resamples_whole_task_deltas() -> None:
     stock = metrics("stock", {"alpha": 0.0, "beta": 0.0, "gamma": 0.0})
     treatment = metrics("symnav", {"alpha": 0.0, "beta": 0.25, "gamma": 0.5})
@@ -136,8 +168,12 @@ def metrics(
     complete: bool = True,
     model: str = "terra",
     repetition_scores: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0),
+    f2p_scores: dict[str, float] | None = None,
 ) -> ConfigurationMetrics:
-    tasks = tuple(task_metrics(task, score) for task, score in task_scores.items())
+    tasks = tuple(
+        task_metrics(task, score, f2p=(f2p_scores or {}).get(task))
+        for task, score in task_scores.items()
+    )
     complete_tasks = len(tasks) if complete else len(tasks) - 1
     return ConfigurationMetrics(
         key=ConfigurationKey(
@@ -170,12 +206,12 @@ def metrics(
     )
 
 
-def task_metrics(task: str, score: float) -> TaskMetrics:
+def task_metrics(task: str, score: float, *, f2p: float | None = None) -> TaskMetrics:
     return TaskMetrics(
         task=task,
         scored_trials=4,
         pass_fraction=score,
-        mean_f2p=None,
+        mean_f2p=f2p,
         mean_p2p=None,
         mean_partial=None,
         mean_cost=None,

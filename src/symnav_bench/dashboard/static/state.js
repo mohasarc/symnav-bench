@@ -12,6 +12,12 @@ export const METRICS = [
   ["failures", "Failures"],
 ].map(([id, label]) => ({ id, label }));
 
+export const ADOPTION_FILTERS = [
+  ["all", "All trials"],
+  ["invoked", "symnav invoked"],
+  ["idle", "symnav idle"],
+].map(([id, label]) => ({ id, label }));
+
 export function createInitialState(payload) {
   return {
     studyId: payload.study.id,
@@ -20,8 +26,47 @@ export function createInitialState(payload) {
     pivot: "tasks",
     configurationId: "all",
     condition: "all",
+    adoptionFilter: "all",
     selectedCell: null,
   };
+}
+
+export function rowsWithAdoptionFilter(rows, attempts, mode) {
+  if (!mode || mode === "all") {
+    return rows;
+  }
+  const wantInvoked = mode === "invoked";
+  return rows.map((row) => {
+    const trials = attempts.filter(
+      (attempt) =>
+        attempt.configuration_id === row.configuration_id &&
+        attempt.condition === row.condition &&
+        attempt.task === row.task &&
+        attempt.outcome !== "retryable_error" &&
+        Boolean(attempt.adoption?.used_symnav) === wantInvoked,
+    );
+    return {
+      ...row,
+      trials: trials
+        .map((attempt) => ({ outcome: attempt.outcome, repetition: attempt.repetition }))
+        .sort((left, right) => left.repetition - right.repetition),
+      metrics: {
+        ...row.metrics,
+        performance_score: meanReward(trials, (rewards) => rewards.reward),
+        f2p: meanReward(trials, (rewards) => rewards.f2p),
+      },
+    };
+  });
+}
+
+function meanReward(trials, select) {
+  const values = trials
+    .map((attempt) => select(attempt.rewards ?? {}))
+    .filter((value) => typeof value === "number");
+  if (values.length === 0) {
+    return null;
+  }
+  return values.reduce((total, value) => total + value, 0) / values.length;
 }
 
 export function filterTaskRows(rows, state) {

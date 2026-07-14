@@ -224,6 +224,8 @@ def _comparison_mapping(
         "ties": comparison.ties,
         "losses": comparison.losses,
         "task_deltas": [asdict(item) for item in comparison.task_deltas],
+        "f2p_uplift": asdict(comparison.f2p_uplift) if comparison.f2p_uplift is not None else None,
+        "f2p_task_deltas": [asdict(item) for item in comparison.f2p_task_deltas],
         "study_id": comparison.study_id,
         "symnav_revision": (
             asdict(comparison.symnav_revision)
