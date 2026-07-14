@@ -259,7 +259,8 @@ def test_runner_normalizes_pier_trial_result_after_agent_failure(tmp_path) -> No
         sleeper=lambda seconds: None,
     )
     attempts = runner.run_all()
-    assert [attempt.disposition.outcome for attempt in attempts] == ["failed"]
+    assert [attempt.disposition.outcome for attempt in attempts] == ["retryable_error"]
+    assert attempts[0].disposition.retry_reason == "runner"
     assert attempts[0].rewards == {"f2p": 0.0}
     assert attempts[0].exception == {
         "exception_type": "RuntimeError",

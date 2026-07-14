@@ -64,6 +64,56 @@ def test_verifier_reward_wins_over_agent_exit_exception() -> None:
     assert disposition.retry_reason is None
 
 
+def test_agent_crash_with_zero_reward_is_retryable_not_scored() -> None:
+    result = {
+        "verifier_result": {"rewards": {"reward": 0.0, "f2p_passed": 0, "f2p_total": 25}},
+        "exception_info": {
+            "exception_type": "NonZeroAgentExitCodeError",
+            "exception_message": "Command failed (exit 1): codex exec ... You've hit your usage limit.",
+        },
+    }
+
+    disposition = classify_attempt(result, None)
+
+    assert disposition.outcome == "retryable_error"
+    assert disposition.retry_reason == "quota"
+    assert disposition.scored_failure_reason is None
+
+
+def test_agent_crash_with_full_reward_still_passes() -> None:
+    result = {
+        "verifier_result": {"rewards": {"reward": 1.0}},
+        "exception_info": {
+            "exception_type": "NonZeroAgentExitCodeError",
+            "exception_message": "Command failed (exit 1)",
+        },
+    }
+
+    assert classify_attempt(result, None).outcome == "passed"
+
+
+def test_clean_zero_reward_without_exception_stays_scored_failure() -> None:
+    disposition = classify_attempt(_result({"f2p": 1.0, "p2p": 0.5}), None)
+
+    assert disposition.outcome == "failed"
+    assert disposition.scored_failure_reason == "verifier"
+
+
+def test_context_window_crash_stays_scored_even_with_zero_reward() -> None:
+    result = {
+        "verifier_result": {"rewards": {"reward": 0.0, "f2p_total": 25}},
+        "exception_info": {
+            "exception_type": "ContextWindowExceededError",
+            "exception_message": "context window exceeded",
+        },
+    }
+
+    disposition = classify_attempt(result, None)
+
+    assert disposition.outcome == "failed"
+    assert disposition.scored_failure_reason == "context_window"
+
+
 @pytest.mark.parametrize("exception_type", ["ContextWindowExceededError", "AgentTimeoutError"])
 def test_expected_agent_limits_are_scored_failures(exception_type: str) -> None:
     disposition = classify_attempt(_result(exception_type=exception_type), None)
@@ -162,6 +212,36 @@ def test_load_corrects_historical_verifier_outcome_from_canonical_reward(tmp_pat
 
     assert loaded.disposition.outcome == "passed"
     assert loaded.disposition.scored_failure_reason is None
+
+
+def test_load_demotes_historical_crashed_scored_failure_to_retryable(tmp_path) -> None:
+    attempt = _attempt(_slot(), "attempt-1", "failed")
+    value = attempt.to_json()
+    value["rewards"] = {"reward": 0.0, "f2p_passed": 0, "f2p_total": 25}
+    value["exception"] = {
+        "exception_type": "NonZeroAgentExitCodeError",
+        "exception_message": "Command failed (exit 1): You've hit your usage limit.",
+    }
+    path = tmp_path / "attempt.json"
+    path.write_text(__import__("json").dumps(value), encoding="utf-8")
+
+    loaded = AttemptRecord.load(path)
+
+    assert loaded.disposition.outcome == "retryable_error"
+    assert loaded.disposition.retry_reason == "quota"
+
+
+def test_load_keeps_clean_scored_failure_without_exception(tmp_path) -> None:
+    attempt = _attempt(_slot(), "attempt-1", "failed")
+    value = attempt.to_json()
+    value["rewards"] = {"reward": 0.0, "f2p_passed": 20, "f2p_total": 25}
+    path = tmp_path / "attempt.json"
+    path.write_text(__import__("json").dumps(value), encoding="utf-8")
+
+    loaded = AttemptRecord.load(path)
+
+    assert loaded.disposition.outcome == "failed"
+    assert loaded.disposition.scored_failure_reason == "verifier"
 
 
 def _result(

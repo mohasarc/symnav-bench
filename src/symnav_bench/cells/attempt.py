@@ -72,6 +72,7 @@ class AttemptRecord:
         disposition = _canonical_disposition(
             AttemptDisposition(**data["disposition"]),
             rewards,
+            data.get("exception"),
         )
         return cls(
             schema_version=int(data["schema_version"]),
@@ -165,14 +166,8 @@ def classify_attempt(
     pier_error: Exception | None,
 ) -> AttemptDisposition:
     rewards = _verifier_rewards(result)
-    if rewards:
-        passed = all(_is_full_reward(value) for value in rewards.values())
-        return AttemptDisposition(
-            outcome="passed" if passed else "failed",
-            scored_failure_reason=None if passed else "verifier",
-            retry_reason=None,
-            detail=None,
-        )
+    if rewards and all(_is_full_reward(value) for value in rewards.values()):
+        return AttemptDisposition("passed", None, None, None)
 
     exception = _exception_detail(result, pier_error)
     normalized = " ".join(exception.values()).lower()
@@ -182,8 +177,25 @@ def classify_attempt(
     if _contains(normalized, "agenttimeout", "agent timeout", "agent timed out"):
         return AttemptDisposition("failed", "agent_timeout", None, detail)
 
+    if _has_recorded_exception(result, pier_error):
+        reason = _retry_reason(normalized, pier_error is not None)
+        return AttemptDisposition("retryable_error", None, reason, detail)
+
+    if rewards:
+        return AttemptDisposition("failed", "verifier", None, detail)
+
     reason = _retry_reason(normalized, pier_error is not None)
     return AttemptDisposition("retryable_error", None, reason, detail)
+
+
+def _has_recorded_exception(
+    result: Mapping[str, Any],
+    pier_error: Exception | None,
+) -> bool:
+    if pier_error is not None:
+        return True
+    info = result.get("exception_info")
+    return bool(info) if isinstance(info, (Mapping, str)) else False
 
 
 def _verifier_rewards(result: Mapping[str, Any]) -> dict[str, Any]:
@@ -205,20 +217,46 @@ def _verifier_rewards(result: Mapping[str, Any]) -> dict[str, Any]:
 def _canonical_disposition(
     disposition: AttemptDisposition,
     rewards: Mapping[str, Any],
+    exception: Any = None,
 ) -> AttemptDisposition:
     reward = rewards.get("reward")
-    if (
-        disposition.scored_failure_reason != "verifier"
-        or not isinstance(reward, (int, float))
-        or isinstance(reward, bool)
-    ):
-        return disposition
-    return AttemptDisposition(
-        outcome="passed" if reward == 1.0 else "failed",
-        scored_failure_reason=None if reward == 1.0 else "verifier",
-        retry_reason=None,
-        detail=disposition.detail,
-    )
+    reward_is_number = isinstance(reward, (int, float)) and not isinstance(reward, bool)
+    if reward_is_number and reward == 1.0:
+        return AttemptDisposition("passed", None, None, disposition.detail)
+    if disposition.outcome != "retryable_error":
+        demoted = _crash_retry_disposition(exception, disposition.detail)
+        if demoted is not None:
+            return demoted
+    if disposition.scored_failure_reason == "verifier" and reward_is_number:
+        return AttemptDisposition("failed", "verifier", None, disposition.detail)
+    return disposition
+
+
+def _crash_retry_disposition(
+    exception: Any,
+    detail: str | None,
+) -> AttemptDisposition | None:
+    if not isinstance(exception, Mapping):
+        return None
+    text = " ".join(
+        str(value)
+        for value in (
+            exception.get("exception_type"),
+            exception.get("type"),
+            exception.get("name"),
+            exception.get("message"),
+            exception.get("detail"),
+            exception.get("exception_message"),
+        )
+        if value
+    ).lower()
+    if not text:
+        return None
+    if _contains(text, "contextwindow", "context window", "context_length", "token limit"):
+        return None
+    if _contains(text, "agenttimeout", "agent timeout", "agent timed out"):
+        return None
+    return AttemptDisposition("retryable_error", None, _retry_reason(text, False), detail)
 
 
 def _is_full_reward(value: Any) -> bool:
@@ -238,7 +276,12 @@ def _exception_detail(
                 or info.get("name")
                 or ""
             ),
-            "message": str(info.get("message") or info.get("detail") or ""),
+            "message": str(
+                info.get("message")
+                or info.get("detail")
+                or info.get("exception_message")
+                or ""
+            ),
         }
     if isinstance(info, str):
         return {"type": "", "message": info}
@@ -251,6 +294,7 @@ def _retry_reason(normalized: str, has_pier_error: bool) -> RetryReason:
     if _contains(
         normalized,
         "usagelimit",
+        "usage limit",
         "rate limit",
         "ratelimit",
         "quota",
