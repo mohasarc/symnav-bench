@@ -44,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
             return raw_archive_command(args)
         if args.command == "study-report":
             return study_report_command(args)
+        if args.command == "build-trajectories":
+            return build_trajectories_command(args)
     except Exception as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -97,6 +99,9 @@ def build_parser() -> argparse.ArgumentParser:
     raw_archive_parser.add_argument("--artifact", type=Path, action="append", required=True)
     study_report_parser = subcommands.add_parser("study-report")
     study_report_parser.add_argument("--study-dir", type=Path, required=True)
+    build_trajectories_parser = subcommands.add_parser("build-trajectories")
+    build_trajectories_parser.add_argument("--study-dir", type=Path, required=True)
+    build_trajectories_parser.add_argument("--raw-dir", type=Path, required=True)
     return parser
 
 
@@ -258,6 +263,15 @@ def study_report_command(args: argparse.Namespace) -> int:
         shutil.copy2(source, data_dir / source.name)
     for source in sorted(parquet_dir.glob("*.parquet")):
         shutil.copy2(source, data_dir / source.name)
+    return 0
+
+
+def build_trajectories_command(args: argparse.Namespace) -> int:
+    from symnav_bench.report.attempt_view import build_trajectory_views
+
+    out_dir = args.study_dir / "dashboard" / "attempts"
+    written = build_trajectory_views(args.study_dir, args.raw_dir, out_dir)
+    print(f"{args.study_dir.name}: wrote {len(written)} attempt trajectories to {out_dir}")
     return 0
 
 

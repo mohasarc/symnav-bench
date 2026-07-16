@@ -919,6 +919,13 @@ function attemptSection(title, attempts) {
       article.append(` · ${attempt.retry_reason ?? attempt.scored_failure_reason}`);
     }
     const links = artifactLinks(attempt.artifacts);
+    if (attempt.attempt_id) {
+      const trajectory = document.createElement("a");
+      trajectory.href = `./static/attempt.html?attempt=${encodeURIComponent(attempt.attempt_id)}`;
+      trajectory.textContent = "trajectory ↗";
+      trajectory.className = "trajectory-link";
+      links.prepend(trajectory);
+    }
     if (links.childElementCount) article.append(links);
     section.append(article);
   }
