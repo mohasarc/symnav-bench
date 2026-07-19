@@ -99,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     raw_archive_parser.add_argument("--artifact", type=Path, action="append", required=True)
     study_report_parser = subcommands.add_parser("study-report")
     study_report_parser.add_argument("--study-dir", type=Path, required=True)
+    study_report_parser.add_argument("--raw-dir", type=Path)
     build_trajectories_parser = subcommands.add_parser("build-trajectories")
     build_trajectories_parser.add_argument("--study-dir", type=Path, required=True)
     build_trajectories_parser.add_argument("--raw-dir", type=Path, required=True)
@@ -254,6 +255,11 @@ def study_report_command(args: argparse.Namespace) -> int:
 
     dashboard_dir = args.study_dir / "dashboard"
     write_report(StudyDataset.load(args.study_dir), dashboard_dir)
+    if getattr(args, "raw_dir", None) is not None and args.raw_dir.exists():
+        from symnav_bench.report.attempt_view import build_trajectory_views
+
+        written = build_trajectory_views(args.study_dir, args.raw_dir, dashboard_dir / "attempts")
+        print(f"trajectories: wrote {len(written)} attempt views")
     data_dir = args.study_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(dashboard_dir / "analysis-v1.json", data_dir / "study.json")
