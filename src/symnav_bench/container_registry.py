@@ -8,6 +8,9 @@ from typing import Protocol
 from symnav_bench.dataset_fetch import HttpResponse
 
 GHCR_HOST = "https://ghcr.io"
+GHCR_TOKEN_URL = f"{GHCR_HOST}/token?service=ghcr.io"
+DOCKER_HUB_REGISTRY_HOST = "https://registry-1.docker.io"
+DOCKER_HUB_TOKEN_URL = "https://auth.docker.io/token?service=registry.docker.io"
 MANIFEST_ACCEPT = ", ".join(
     (
         "application/vnd.oci.image.index.v1+json",
@@ -33,9 +36,27 @@ def open_request(url: str, headers: dict[str, str]) -> HttpResponse:
 def resolve_ghcr_image_digest(
     repository: str, tag: str, *, opener: RequestOpener = open_request
 ) -> str | None:
+    return resolve_image_digest(GHCR_TOKEN_URL, GHCR_HOST, repository, tag, opener)
+
+
+def resolve_docker_hub_image_digest(
+    repository: str, tag: str, *, opener: RequestOpener = open_request
+) -> str | None:
+    return resolve_image_digest(
+        DOCKER_HUB_TOKEN_URL, DOCKER_HUB_REGISTRY_HOST, repository, tag, opener
+    )
+
+
+def resolve_image_digest(
+    token_url: str,
+    registry_host: str,
+    repository: str,
+    tag: str,
+    opener: RequestOpener,
+) -> str | None:
     try:
-        token = anonymous_pull_token(repository, opener)
-        manifest_url = f"{GHCR_HOST}/v2/{repository}/manifests/{tag}"
+        token = anonymous_pull_token(token_url, repository, opener)
+        manifest_url = f"{registry_host}/v2/{repository}/manifests/{tag}"
         headers = {"Authorization": f"Bearer {token}", "Accept": MANIFEST_ACCEPT}
         with opener(manifest_url, headers) as response:
             digest = response.headers.get("Docker-Content-Digest")
@@ -48,7 +69,9 @@ def resolve_ghcr_image_digest(
     return digest
 
 
-def anonymous_pull_token(repository: str, opener: RequestOpener) -> str:
-    url = f"{GHCR_HOST}/token?service=ghcr.io&scope=repository:{repository}:pull"
+def anonymous_pull_token(
+    token_url: str, repository: str, opener: RequestOpener
+) -> str:
+    url = f"{token_url}&scope=repository:{repository}:pull"
     with opener(url, {}) as response:
         return json.loads(response.read())["token"]
