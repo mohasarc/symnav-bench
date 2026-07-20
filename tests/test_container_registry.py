@@ -6,9 +6,13 @@ import urllib.error
 
 import pytest
 
-from symnav_bench.container_registry import resolve_ghcr_image_digest
+from symnav_bench.container_registry import (
+    resolve_docker_hub_image_digest,
+    resolve_ghcr_image_digest,
+)
 
 REPOSITORY = "timesler/swe-polybench.eval.x86_64.mui__material-ui-7444"
+DOCKER_HUB_REPOSITORY = "mswebench/darkreader_m_darkreader"
 DIGEST = "sha256:" + "d" * 64
 
 
@@ -94,3 +98,50 @@ def test_missing_digest_header_is_an_error() -> None:
 
     with pytest.raises(ValueError, match=REPOSITORY):
         resolve_ghcr_image_digest(REPOSITORY, "latest", opener=opener)
+
+
+def test_docker_hub_resolves_digest_via_anonymous_token() -> None:
+    requests: list[tuple[str, dict[str, str]]] = []
+
+    digest = resolve_docker_hub_image_digest(
+        DOCKER_HUB_REPOSITORY, "pr-7241", opener=registry_opener(requests)
+    )
+
+    assert digest == DIGEST
+    token_url, _ = requests[0]
+    assert token_url.startswith("https://auth.docker.io/token?")
+    assert "service=registry.docker.io" in token_url
+    assert f"repository:{DOCKER_HUB_REPOSITORY}:pull" in token_url
+    manifest_url, manifest_headers = requests[1]
+    assert manifest_url == (
+        f"https://registry-1.docker.io/v2/{DOCKER_HUB_REPOSITORY}/manifests/pr-7241"
+    )
+    assert manifest_headers["Authorization"] == "Bearer anonymous-token"
+    assert "application/vnd.oci.image.index.v1+json" in manifest_headers["Accept"]
+
+
+def test_docker_hub_missing_tag_resolves_to_none() -> None:
+    opener = registry_opener(
+        [], manifest_error=http_error("https://registry-1.docker.io/v2", 404)
+    )
+
+    assert (
+        resolve_docker_hub_image_digest(DOCKER_HUB_REPOSITORY, "pr-1", opener=opener)
+        is None
+    )
+
+
+def test_docker_hub_unexpected_error_is_raised() -> None:
+    opener = registry_opener(
+        [], manifest_error=http_error("https://registry-1.docker.io/v2", 500)
+    )
+
+    with pytest.raises(urllib.error.HTTPError):
+        resolve_docker_hub_image_digest(DOCKER_HUB_REPOSITORY, "pr-1", opener=opener)
+
+
+def test_docker_hub_missing_digest_header_is_an_error() -> None:
+    opener = registry_opener([], digest_header=None)
+
+    with pytest.raises(ValueError, match=DOCKER_HUB_REPOSITORY):
+        resolve_docker_hub_image_digest(DOCKER_HUB_REPOSITORY, "pr-1", opener=opener)
