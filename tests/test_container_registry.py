@@ -42,9 +42,12 @@ def registry_opener(
     manifest_error: urllib.error.HTTPError | None = None,
     token_error: urllib.error.HTTPError | None = None,
     digest_header: str | None = DIGEST,
+    methods: list[str] | None = None,
 ):
-    def opener(url: str, headers: dict[str, str]) -> FakeResponse:
+    def opener(url: str, headers: dict[str, str], method: str = "GET") -> FakeResponse:
         requests.append((url, headers))
+        if methods is not None:
+            methods.append(method)
         if "/token?" in url:
             if token_error is not None:
                 raise token_error
@@ -192,3 +195,17 @@ def test_digest_resolver_caches_pull_token_per_repository() -> None:
     assert len(token_urls) == 2
     manifest_urls = [url for url, _ in requests if "/manifests/" in url]
     assert len(manifest_urls) == 3
+
+
+def test_manifest_digest_is_probed_with_head_request() -> None:
+    requests: list[tuple[str, dict[str, str]]] = []
+    methods: list[str] = []
+
+    digest = resolve_docker_hub_image_digest(
+        DOCKER_HUB_REPOSITORY,
+        "pr-7241",
+        opener=registry_opener(requests, methods=methods),
+    )
+
+    assert digest == DIGEST
+    assert methods == ["GET", "HEAD"]
