@@ -67,6 +67,7 @@ def test_builds_versioned_canonical_dashboard_payload() -> None:
     assert payload.schema_version == 1
     assert payload.study["id"] == "study"
     assert payload.study["scoring_policy"] == "deepswe-pass-fraction-v1"
+    assert "benchmark" not in payload.study
     assert payload.coverage == {
         "planned_slots": 8,
         "scored_slots": 8,
@@ -100,6 +101,59 @@ def test_incomplete_task_values_stay_null_and_coverage_stays_visible() -> None:
     assert payload.tasks[0]["metrics"]["performance_score"] is None
 
 
+def test_polybench_payload_carries_benchmark_header_and_tier_rows() -> None:
+    dataset = benchmark_dataset("swe-polybench", tiers=("high", "mid"), task_tier="high")
+    stock = metrics("stock", 0.25, tier="high")
+
+    payload = build_dashboard_payload(dataset, (stock,), (), (), None)
+
+    assert payload.study["benchmark"] == "swe-polybench"
+    assert payload.study["benchmark_source_revision"] == "a" * 40
+    assert [row["tier"] for row in payload.tasks] == ["high"]
+
+
+def test_multi_swe_payload_labels_benchmark_without_tier() -> None:
+    dataset = benchmark_dataset("multi-swe-bench", tiers=None, task_tier=None)
+    stock = metrics("stock", 0.25)
+
+    payload = build_dashboard_payload(dataset, (stock,), (), (), None)
+
+    assert payload.study["benchmark"] == "multi-swe-bench"
+    assert all("tier" not in row for row in payload.tasks)
+
+
+def benchmark_dataset(
+    benchmark: str,
+    tiers: tuple[str, ...] | None,
+    task_tier: str | None,
+) -> StudyDataset:
+    revision = SymnavRevision("b" * 40, "main", 1, "main", "b" * 40, None)
+    protocol = StudyProtocol(
+        BenchmarkSelection(benchmark, "a" * 40, tiers),
+        revision,
+        4,
+        9_000,
+        42,
+        ("stock", "symnav"),
+        "deepswe-pass-fraction-v1",
+        5.0,
+    )
+    manifest = StudyManifest(
+        2,
+        "study",
+        protocol,
+        (AgentConfiguration("codex-terra", AgentSpec("codex", "terra", "medium"), "0.31.0"),),
+    )
+    task_kwargs = {"tier": task_tier} if task_tier is not None else {}
+    suite = SuiteManifest(
+        benchmark,
+        "a" * 40,
+        (TaskManifestEntry("task", "typescript", "c" * 64, **task_kwargs),),
+        "d" * 64,
+    )
+    return StudyDataset(manifest, suite, (), ())
+
+
 def study_dataset() -> StudyDataset:
     revision = SymnavRevision("b" * 40, "main", 1, "main", "b" * 40, None)
     protocol = StudyProtocol(
@@ -127,7 +181,12 @@ def study_dataset() -> StudyDataset:
     return StudyDataset(manifest, suite, (), ())
 
 
-def metrics(condition: str, score: float | None) -> ConfigurationMetrics:
+def metrics(
+    condition: str,
+    score: float | None,
+    tier: str | None = None,
+) -> ConfigurationMetrics:
+    task_kwargs = {"tier": tier} if tier is not None else {}
     task = TaskMetrics(
         "task",
         4 if score is not None else 0,
@@ -141,6 +200,7 @@ def metrics(condition: str, score: float | None) -> ConfigurationMetrics:
         3.0,
         4.0,
         None,
+        **task_kwargs,
     )
     return ConfigurationMetrics(
         ConfigurationKey(

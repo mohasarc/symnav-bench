@@ -36,6 +36,111 @@ TASK_CHECKSUM = "3" * 64
 BUNDLE_HASH = "4" * 64
 
 
+def v2_polybench_protocol() -> dict:
+    protocol = {
+        key: value for key, value in copy.deepcopy(PROTOCOL).items() if key != "deep_swe_sha"
+    }
+    protocol["benchmark"] = {
+        "name": "swe-polybench",
+        "source": {"revision": "a" * 40},
+        "tiers": ["high", "mid"],
+    }
+    return protocol
+
+
+def test_v2_polybench_study_joins_tier_onto_task_metrics(tmp_path: Path) -> None:
+    study_dir = write_v2_polybench_study_directory(tmp_path)
+    write_attempt(
+        study_dir,
+        "batch-1",
+        v2_attempt_mapping("stock", 1, "attempt-1", "passed", "task-a", "high"),
+    )
+
+    dataset = StudyDataset.load(study_dir)
+    stock_key = next(key for key in dataset.configurations() if key.condition == "stock")
+    metrics = compute_configuration_metrics(dataset, stock_key)
+
+    assert dataset.warnings == ()
+    assert sum(result.scored_attempt is not None for result in dataset.slots) == 1
+    assert [(task.task, task.tier) for task in metrics.tasks] == [
+        ("task-a", "high"),
+        ("task-b", "mid"),
+    ]
+
+
+def test_rejects_attempt_with_mismatched_benchmark(tmp_path: Path) -> None:
+    study_dir = write_v2_polybench_study_directory(tmp_path)
+    attempt = v2_attempt_mapping("stock", 1, "attempt-1", "passed", "task-a", "high")
+    for key in ("benchmark", "benchmark_source_revision", "task_fit_tier"):
+        del attempt["harness"][key]
+    write_attempt(study_dir, "batch-1", attempt)
+
+    dataset = StudyDataset.load(study_dir)
+
+    assert all(result.scored_attempt is None for result in dataset.slots)
+    assert any("incompatible benchmark" in warning for warning in dataset.warnings)
+
+
+def write_v2_polybench_study_directory(path: Path) -> Path:
+    protocol = v2_polybench_protocol()
+    study = {
+        "schema_version": 2,
+        "id": "study",
+        "protocol_fingerprint": fingerprint(protocol),
+        "protocol": protocol,
+        "configurations": [
+            {
+                "id": "configuration",
+                "agent": "codex",
+                "model": "model",
+                "effort": "medium",
+                "agent_version": "0.31.0",
+            }
+        ],
+    }
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "manifest.yml").write_text(
+        yaml.safe_dump(study, sort_keys=False),
+        encoding="utf-8",
+    )
+    suite = {
+        "benchmark": "swe-polybench",
+        "source_revision": "a" * 40,
+        "fingerprint": SUITE_FINGERPRINT,
+        "tasks": [
+            {
+                "slug": task,
+                "language": "typescript",
+                "checksum": task_checksum(task),
+                "tier": tier,
+            }
+            for task, tier in (("task-a", "high"), ("task-b", "mid"))
+        ],
+    }
+    (path / "suite.json").write_text(json.dumps(suite), encoding="utf-8")
+    return path
+
+
+def v2_attempt_mapping(
+    condition: str,
+    repetition: int,
+    attempt_id: str,
+    outcome: str,
+    task: str,
+    tier: str,
+) -> dict:
+    attempt = attempt_mapping(condition, repetition, attempt_id, outcome, task)
+    attempt["protocol_fingerprint"] = fingerprint(v2_polybench_protocol())
+    attempt["harness"].update(
+        {
+            "benchmark": "swe-polybench",
+            "benchmark_source_revision": "a" * 40,
+            "task_fit_tier": tier,
+        }
+    )
+    return attempt
+
+
 @pytest.mark.parametrize(
     ("mismatch", "reason"),
     [
