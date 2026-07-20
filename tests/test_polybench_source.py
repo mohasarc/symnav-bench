@@ -397,3 +397,146 @@ def test_resolve_suite_cli_resolves_deepswe_studies(
     assert "benchmark" not in payload
     assert [task["slug"] for task in payload["tasks"]] == ["alpha"]
     assert "deepswe-ts-test: 1 tasks, 4 slots" in capsys.readouterr().out
+
+
+def pinned_image(instance_id: str, digest: str = "0" * 64) -> str:
+    return (
+        "ghcr.io/timesler/swe-polybench.eval.x86_64."
+        + instance_id.lower()
+        + "@sha256:"
+        + digest
+    )
+
+
+def materializing_source(
+    rows: list[dict[str, str]],
+    tiers: tuple[str, ...] = ("high", "mid"),
+    resolve_image=pinned_image,
+    suite=None,
+) -> SwePolybenchTaskSource:
+    selection = BenchmarkSelection(
+        name="swe-polybench", source_revision=POLYBENCH_REVISION, tiers=tiers
+    )
+    return SwePolybenchTaskSource(
+        selection,
+        load_rows=lambda revision: rows,
+        resolve_image=resolve_image,
+        suite=suite,
+    )
+
+
+def test_resolve_checksums_match_runtime_materialization(tmp_path: Path) -> None:
+    from pier.models.task.paths import TaskPaths
+
+    from symnav_bench.suite import directory_checksum
+
+    suite = materializing_source(tiered_rows()).resolve()
+    source = materializing_source(tiered_rows(), suite=suite)
+
+    tasks_dir = source.ensure_tasks_dir(["b-high"], tmp_path)
+
+    task_dir = tasks_dir / "b-high"
+    assert TaskPaths(task_dir).is_valid()
+    declared = {task.slug: task.checksum for task in suite.tasks}
+    assert directory_checksum(task_dir) == declared["b-high"]
+
+
+def test_ensure_tasks_dir_materializes_only_requested_slugs(tmp_path: Path) -> None:
+    suite = materializing_source(tiered_rows()).resolve()
+    source = materializing_source(tiered_rows(), suite=suite)
+
+    source.ensure_tasks_dir(["b-high"], tmp_path)
+
+    assert (tmp_path / "b-high").is_dir()
+    assert not (tmp_path / "c-mid").exists()
+
+
+def test_materialized_task_carries_instance_content(tmp_path: Path) -> None:
+    import json as json_module
+
+    from symnav_bench.benchmark_sources.grading import grade_script_source
+
+    suite = materializing_source(tiered_rows()).resolve()
+    source = materializing_source(tiered_rows(), suite=suite)
+
+    task_dir = source.ensure_tasks_dir(["b-high"], tmp_path) / "b-high"
+
+    assert (task_dir / "instruction.md").read_text(encoding="utf-8") == "statement"
+    config = json_module.loads(
+        (task_dir / "tests" / "config.json").read_text(encoding="utf-8")
+    )
+    assert config["log_parser"] == "mocha"
+    assert config["docker_image"] == pinned_image("b-high")
+    assert config["base_commit"] == "c" * 40
+    grade = (task_dir / "tests" / "grade.py").read_text(encoding="utf-8")
+    assert grade == grade_script_source()
+    task_toml = (task_dir / "task.toml").read_text(encoding="utf-8")
+    assert pinned_image("b-high") in task_toml
+
+
+def test_resolve_excludes_instances_without_eval_images(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def only_high_published(instance_id: str) -> str | None:
+        return pinned_image(instance_id) if instance_id == "b-high" else None
+
+    suite = materializing_source(
+        tiered_rows(), resolve_image=only_high_published
+    ).resolve()
+
+    assert [task.slug for task in suite.tasks] == ["b-high"]
+    assert "excluded 1 of 2" in capsys.readouterr().err
+
+
+def test_resolve_errors_when_no_selected_instance_has_an_image() -> None:
+    with pytest.raises(ValueError, match="no tasks"):
+        materializing_source(tiered_rows(), resolve_image=lambda _: None).resolve()
+
+
+def test_resolve_rejects_repo_without_log_parser() -> None:
+    rows = [dataset_row(repo="unknown/repo")]
+
+    with pytest.raises(ValueError, match="unknown/repo"):
+        materializing_source(rows).resolve()
+
+
+def test_ensure_tasks_dir_requires_declared_suite(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="suite"):
+        materializing_source(tiered_rows()).ensure_tasks_dir(["b-high"], tmp_path)
+
+
+def test_ensure_tasks_dir_rejects_slug_missing_from_suite(tmp_path: Path) -> None:
+    suite = materializing_source(tiered_rows()).resolve()
+    source = materializing_source(tiered_rows(), suite=suite)
+
+    with pytest.raises(ValueError, match="a-low"):
+        source.ensure_tasks_dir(["a-low"], tmp_path)
+
+
+def test_ensure_tasks_dir_rejects_slug_missing_from_dataset(tmp_path: Path) -> None:
+    suite = materializing_source(tiered_rows()).resolve()
+    shrunken = [row for row in tiered_rows() if row["instance_id"] != "b-high"]
+    source = materializing_source(shrunken, suite=suite)
+
+    with pytest.raises(ValueError, match="b-high"):
+        source.ensure_tasks_dir(["b-high"], tmp_path)
+
+
+def test_ensure_tasks_dir_rejects_vanished_eval_image(tmp_path: Path) -> None:
+    suite = materializing_source(tiered_rows()).resolve()
+    source = materializing_source(tiered_rows(), resolve_image=lambda _: None, suite=suite)
+
+    with pytest.raises(ValueError, match="b-high"):
+        source.ensure_tasks_dir(["b-high"], tmp_path)
+
+
+def test_ensure_tasks_dir_rejects_checksum_drift(tmp_path: Path) -> None:
+    suite = materializing_source(tiered_rows()).resolve()
+
+    def moved_image(instance_id: str) -> str:
+        return pinned_image(instance_id, digest="f" * 64)
+
+    source = materializing_source(tiered_rows(), resolve_image=moved_image, suite=suite)
+
+    with pytest.raises(ValueError, match="b-high"):
+        source.ensure_tasks_dir(["b-high"], tmp_path)
