@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import replace
+import json
+from dataclasses import asdict, replace
+from pathlib import Path
 
 from symnav_bench.report.dashboard_payload import build_dashboard_payload
 from symnav_bench.report.statistics import compare_condition_to_stock
@@ -17,6 +19,28 @@ from symnav_bench.study import SymnavRevision
 from symnav_bench.run_spec import AgentSpec
 from symnav_bench.suite import SuiteManifest
 from symnav_bench.suite import TaskManifestEntry
+
+
+GOLDEN_FIXTURES = Path(__file__).parent / "fixtures" / "golden"
+
+
+def test_deepswe_payload_serializes_byte_identically_to_golden() -> None:
+    dataset = study_dataset()
+    stock = metrics("stock", 0.25)
+    symnav = metrics("symnav", 0.75)
+    comparison = compare_condition_to_stock(
+        stock,
+        symnav,
+        seed=42,
+        study_id="study",
+        symnav_revision=dataset.manifest.protocol.symnav,
+        suite_fingerprint=dataset.suite.fingerprint,
+    )
+
+    payload = build_dashboard_payload(dataset, (stock, symnav), (comparison,), (), None)
+    serialized = json.dumps(asdict(payload), indent=2, sort_keys=True) + "\n"
+
+    assert serialized.encode() == (GOLDEN_FIXTURES / "deepswe-dashboard-payload.json").read_bytes()
 
 
 def test_builds_versioned_canonical_dashboard_payload() -> None:

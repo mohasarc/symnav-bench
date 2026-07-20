@@ -1,0 +1,210 @@
+{
+  "attempts": [],
+  "comparisons": [
+    {
+      "base_configuration_id": "codex-terra",
+      "condition": "symnav",
+      "configuration_id": "codex:terra:medium:0.31.0:symnav",
+      "demonstrated_improvement": true,
+      "f2p_task_deltas": [
+        {
+          "delta": 0.5,
+          "stock": 0.25,
+          "task": "task",
+          "treatment": 0.75
+        }
+      ],
+      "f2p_uplift": {
+        "lower_95": 0.5,
+        "upper_95": 0.5,
+        "value": 0.5
+      },
+      "losses": 0,
+      "material_improvement": true,
+      "primary": true,
+      "randomization_p_value": 1.0,
+      "study_id": "study",
+      "suite_fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "symnav_revision": {
+        "base_ref": "main",
+        "base_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "evaluation_sequence": 1,
+        "kind": "main",
+        "pull_request": null,
+        "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "task_deltas": [
+        {
+          "delta": 0.5,
+          "stock": 0.25,
+          "task": "task",
+          "treatment": 0.75
+        }
+      ],
+      "ties": 0,
+      "uplift": {
+        "lower_95": 0.5,
+        "upper_95": 0.5,
+        "value": 0.5
+      },
+      "wins": 1
+    }
+  ],
+  "configurations": [
+    {
+      "adoption": null,
+      "agent": "codex",
+      "agent_version": "0.31.0",
+      "bundle_hash": null,
+      "condition": "stock",
+      "configuration_key": "codex:terra:medium:0.31.0",
+      "coverage": {
+        "complete_tasks": 1,
+        "pilot": false,
+        "planned_slots": 4,
+        "provisional": false,
+        "retryable_attempts": 0,
+        "scored_slots": 4,
+        "total_tasks": 1,
+        "unresolved_slot_ids": []
+      },
+      "effort": "medium",
+      "full_symnav": false,
+      "id": "codex-terra",
+      "label": "codex \u00b7 terra \u00b7 medium \u00b7 stock",
+      "metrics": {
+        "cost": 8.0,
+        "cost_per_success": 8.0,
+        "f2p": 0.25,
+        "p2p": 1.0,
+        "partial": 0.25,
+        "performance_score": 0.25,
+        "repetition_scores": [
+          0.25,
+          0.25,
+          0.25,
+          0.25
+        ]
+      },
+      "model": "terra"
+    },
+    {
+      "adoption": null,
+      "agent": "codex",
+      "agent_version": "0.31.0",
+      "bundle_hash": "bundle",
+      "condition": "symnav",
+      "configuration_key": "codex:terra:medium:0.31.0",
+      "coverage": {
+        "complete_tasks": 1,
+        "pilot": false,
+        "planned_slots": 4,
+        "provisional": false,
+        "retryable_attempts": 0,
+        "scored_slots": 4,
+        "total_tasks": 1,
+        "unresolved_slot_ids": []
+      },
+      "effort": "medium",
+      "full_symnav": true,
+      "id": "codex-terra",
+      "label": "codex \u00b7 terra \u00b7 medium \u00b7 symnav",
+      "metrics": {
+        "cost": 8.0,
+        "cost_per_success": 8.0,
+        "f2p": 0.75,
+        "p2p": 1.0,
+        "partial": 0.75,
+        "performance_score": 0.75,
+        "repetition_scores": [
+          0.75,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "model": "terra"
+    }
+  ],
+  "coverage": {
+    "complete_tasks": 1,
+    "pilot": false,
+    "planned_slots": 8,
+    "provisional": false,
+    "scored_slots": 8,
+    "total_tasks": 1
+  },
+  "official_references": [],
+  "schema_version": 1,
+  "study": {
+    "conditions": [
+      "stock",
+      "symnav"
+    ],
+    "deep_swe_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "id": "study",
+    "practical_uplift_points": 5.0,
+    "protocol_fingerprint": "50d78c76b21cb9936ff253a5ddb39ba770c43bf68340d55ea2955566614d7e66",
+    "repetitions": 4,
+    "scoring_policy": "deepswe-pass-fraction-v1",
+    "suite_fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "symnav_revision": {
+      "base_ref": "main",
+      "base_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "evaluation_sequence": 1,
+      "kind": "main",
+      "pull_request": null,
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "tasks": [
+    {
+      "adoption": null,
+      "complete": true,
+      "condition": "stock",
+      "configuration_id": "codex-terra",
+      "configuration_key": "codex:terra:medium:0.31.0",
+      "failure_counts": {},
+      "full_symnav": false,
+      "metrics": {
+        "cost": 2.0,
+        "duration": 4.0,
+        "f2p": 0.25,
+        "failures": 0,
+        "median_cost": 2.0,
+        "output_tokens": 10.0,
+        "p2p": 1.0,
+        "partial": 0.25,
+        "performance_score": 0.25,
+        "steps": 3.0
+      },
+      "task": "task",
+      "trials": []
+    },
+    {
+      "adoption": null,
+      "complete": true,
+      "condition": "symnav",
+      "configuration_id": "codex-terra",
+      "configuration_key": "codex:terra:medium:0.31.0",
+      "failure_counts": {},
+      "full_symnav": true,
+      "metrics": {
+        "cost": 2.0,
+        "duration": 4.0,
+        "f2p": 0.75,
+        "failures": 0,
+        "median_cost": 2.0,
+        "output_tokens": 10.0,
+        "p2p": 1.0,
+        "partial": 0.75,
+        "performance_score": 0.75,
+        "steps": 3.0
+      },
+      "task": "task",
+      "trials": []
+    }
+  ],
+  "versions": [],
+  "warnings": []
+}
