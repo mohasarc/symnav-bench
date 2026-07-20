@@ -13,13 +13,14 @@ from symnav_bench import __version__
 from symnav_bench.build_identity import build_version_text
 from symnav_bench.batch_plan import BatchPlan, TrialSlot, plan_balanced_batches, plan_trial_slots
 from symnav_bench.cells.attempt import AttemptRecord
-from symnav_bench.deepswe import TASK_SLUGS, configured_tasks_dir, ensure_deepswe_tasks
+from symnav_bench.benchmark_sources import benchmark_task_source
+from symnav_bench.deepswe import TASK_SLUGS, configured_tasks_dir, default_deepswe_root
 from symnav_bench.run.auth import validate_auth
 from symnav_bench.run.config import RunConfig
 from symnav_bench.run.runner import CellRunner, subprocess_pier_run
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, parse_conditions
-from symnav_bench.study import StudyManifest, protocol_mapping
+from symnav_bench.study import BenchmarkSelection, StudyManifest, protocol_mapping
 from symnav_bench.suite import (
     SuiteManifest,
     build_suite_manifest,
@@ -123,7 +124,7 @@ def run_command(args: argparse.Namespace) -> int:
     symnav_sha = resolve_symnav_ref(args.symnav_ref)
     specs = [AgentSpec.parse(value) for value in args.agent]
     validate_auth(specs, os.environ)
-    tasks_dir = args.tasks_dir or configured_tasks_dir() or ensure_deepswe_tasks(args.deep_swe_ref)
+    tasks_dir = args.tasks_dir or configured_tasks_dir() or acquire_deepswe_tasks_dir(args.deep_swe_ref)
     tasks = list_tasks(tasks_dir) if args.tasks == "all" else split_csv(args.tasks)
     config = RunConfig(
         specs=specs,
@@ -145,6 +146,11 @@ def run_command(args: argparse.Namespace) -> int:
         symnav_ref=symnav_sha,
     )
     return run_exit_code(runner.run_all())
+
+
+def acquire_deepswe_tasks_dir(deep_swe_ref: str) -> Path:
+    selection = BenchmarkSelection(name="deepswe", source_revision=deep_swe_ref, tiers=None)
+    return benchmark_task_source(selection).ensure_tasks_dir((), default_deepswe_root())
 
 
 def report_command(args: argparse.Namespace) -> int:
