@@ -1,8 +1,50 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from symnav_bench.suite import build_suite_manifest
+from symnav_bench.suite import (
+    build_suite_manifest,
+    parse_suite_manifest,
+    serialize_suite_manifest,
+    suite_fingerprint,
+)
+
+COMMITTED_V1_SUITE = Path(__file__).parent / "fixtures" / "studies" / "deepswe-v1-suite.json"
+COMMITTED_V1_SUITE_FINGERPRINT = (
+    "2bc576336ca85c7750a00c7d4bc3bb56e7bd372840ce5f699601a9a4b488d1b3"
+)
+COMMITTED_V1_DEEP_SWE_SHA = "6db64a40f3318d8659238ff34a8cc4b491c49205"
+
+
+def committed_v1_suite_text() -> str:
+    return COMMITTED_V1_SUITE.read_text(encoding="utf-8")
+
+
+def test_committed_deepswe_suite_parses_as_deepswe_benchmark() -> None:
+    suite = parse_suite_manifest(json.loads(committed_v1_suite_text()))
+
+    assert suite.benchmark == "deepswe"
+    assert suite.source_revision == COMMITTED_V1_DEEP_SWE_SHA
+    assert suite.fingerprint == COMMITTED_V1_SUITE_FINGERPRINT
+    assert [task.slug for task in suite.tasks] == ["ts-pattern-match-each"]
+    assert all(task.tier is None for task in suite.tasks)
+
+
+def test_committed_deepswe_suite_round_trips_byte_identically() -> None:
+    raw_text = committed_v1_suite_text()
+
+    suite = parse_suite_manifest(json.loads(raw_text))
+
+    assert serialize_suite_manifest(suite) == raw_text
+
+
+def test_committed_deepswe_suite_fingerprint_reproduces() -> None:
+    suite = parse_suite_manifest(json.loads(committed_v1_suite_text()))
+
+    recomputed = suite_fingerprint(suite.benchmark, suite.source_revision, suite.tasks)
+
+    assert recomputed == COMMITTED_V1_SUITE_FINGERPRINT
 
 
 def test_builds_sorted_typescript_suite_and_resolves_revision_once(tmp_path: Path) -> None:
