@@ -41,27 +41,28 @@ class SuiteManifest:
 
 def build_suite_manifest(
     tasks_dir: Path,
-    deep_swe_sha: str,
+    source_revision: str,
     *,
+    benchmark: BenchmarkName = "deepswe",
     resolve_git_revision: GitRevisionResolver | None = None,
 ) -> SuiteManifest:
     if not tasks_dir.is_dir():
         raise FileNotFoundError(f"tasks dir does not exist: {tasks_dir}")
     resolved_sha = (
-        resolve_git_revision(tasks_dir.parent, deep_swe_sha)
+        resolve_git_revision(tasks_dir.parent, source_revision)
         if resolve_git_revision is not None
-        else deep_swe_sha
+        else source_revision
     )
     if not GIT_SHA.fullmatch(resolved_sha):
-        raise ValueError("DeepSWE revision must resolve to an immutable git sha")
+        raise ValueError("suite source revision must resolve to an immutable git sha")
     tasks = tuple(
         entry
         for task_dir in sorted(tasks_dir.iterdir(), key=lambda path: path.name)
         if (entry := build_task_manifest_entry(task_dir)) is not None
     )
-    fingerprint = suite_fingerprint("deepswe", resolved_sha, tasks)
+    fingerprint = suite_fingerprint(benchmark, resolved_sha, tasks)
     return SuiteManifest(
-        benchmark="deepswe",
+        benchmark=benchmark,
         source_revision=resolved_sha,
         tasks=tasks,
         fingerprint=fingerprint,

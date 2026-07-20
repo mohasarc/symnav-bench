@@ -44,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
             return report_command(args)
         if args.command == "plan-study":
             return plan_study_command(args)
+        if args.command == "study-metadata":
+            return study_metadata_command(args)
         if args.command == "resolve-suite":
             return resolve_suite_command(args)
         if args.command == "batch-matrix":
@@ -95,6 +97,10 @@ def build_parser() -> argparse.ArgumentParser:
     plan_study_parser.add_argument("--study", type=Path, required=True)
     plan_study_parser.add_argument("--tasks-dir", type=Path, required=True)
     plan_study_parser.add_argument("--json", action="store_true")
+    study_metadata_parser = subcommands.add_parser("study-metadata")
+    study_metadata_parser.add_argument("--study", type=Path, required=True)
+    study_metadata_parser.add_argument("--suite", type=Path, required=True)
+    study_metadata_parser.add_argument("--configuration", required=True)
     resolve_suite_parser = subcommands.add_parser("resolve-suite")
     resolve_suite_parser.add_argument("--study", type=Path, required=True)
     resolve_suite_parser.add_argument("--out", type=Path, required=True)
@@ -204,9 +210,40 @@ def report_study_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def study_metadata_command(args: argparse.Namespace) -> int:
+    study = StudyManifest.load(args.study)
+    suite = parse_suite_manifest(json.loads(args.suite.read_text(encoding="utf-8")))
+    configuration = next(
+        (item for item in study.configurations if item.id == args.configuration), None
+    )
+    if configuration is None:
+        raise ValueError(f"unknown configuration {args.configuration!r} in study {study.id}")
+    spec = configuration.spec
+    json.dump(
+        {
+            "agent_spec": f"{spec.agent}:{spec.model}:{spec.effort}",
+            "agent_version": configuration.agent_version,
+            "benchmark": study.protocol.benchmark.name,
+            "source_revision": study.protocol.benchmark.source_revision,
+            "symnav_sha": study.protocol.symnav.sha,
+            "protocol_fingerprint": study.protocol_fingerprint(),
+            "suite_fingerprint": suite.fingerprint,
+        },
+        sys.stdout,
+        indent=2,
+        sort_keys=True,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
 def plan_study_command(args: argparse.Namespace) -> int:
     study = StudyManifest.load(args.study)
-    suite = build_suite_manifest(args.tasks_dir, study.protocol.benchmark.source_revision)
+    suite = build_suite_manifest(
+        args.tasks_dir,
+        study.protocol.benchmark.source_revision,
+        benchmark=study.protocol.benchmark.name,
+    )
     if args.json:
         write_study_plan(study, sys.stdout, suite=suite)
         return 0
