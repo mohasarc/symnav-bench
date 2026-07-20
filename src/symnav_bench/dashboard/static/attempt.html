@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>attempt · symnav bench</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --ink: #171a20; --muted: #626a78; --paper: #f4f0e8; --surface: #fffdf8;
+        --line: #c8c2b7; --line-strong: #252a35; --blue: #2457d6; --blue-soft: #dfe8ff;
+        --orange: #d9531e; --orange-soft: #ffe5d7; --green: #1f7a4d; --green-soft: #d7f0e0;
+        --code: #f0ebe1;
+        font-family: "IBM Plex Sans", "Avenir Next", ui-sans-serif, system-ui, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #e8e6e1; --muted: #9aa2b0; --paper: #16181d; --surface: #1e2128;
+          --line: #343842; --line-strong: #4a4f5b; --blue: #6b9bff; --blue-soft: #232c40;
+          --orange: #ff8a5c; --orange-soft: #3a281f; --green: #57c98a; --green-soft: #1f3a2c;
+          --code: #14161b;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { background: var(--paper); color: var(--ink); margin: 0; }
+      a { color: var(--blue); }
+      code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+      .top { border-bottom: 2px solid var(--line-strong); padding: .7rem max(1rem, 4vw); }
+      .crumb { color: var(--blue); font: 800 .68rem ui-monospace, monospace; letter-spacing: .08em; text-decoration: none; text-transform: uppercase; }
+      h1 { font-size: clamp(1.1rem, 2.4vw, 1.6rem); letter-spacing: -.03em; margin: .4rem 0 .5rem; word-break: break-word; }
+      .badges { display: flex; flex-wrap: wrap; gap: .4rem; }
+      .badge { border: 1px solid var(--line-strong); font: 800 .66rem ui-monospace, monospace; letter-spacing: .03em; padding: .25rem .45rem; text-transform: uppercase; }
+      .badge.pass { background: var(--green-soft); border-color: var(--green); color: var(--green); }
+      .badge.fail { background: var(--orange-soft); border-color: var(--orange); color: var(--orange); }
+      .badge.symnav { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+      .stats { display: grid; gap: 0; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); margin-top: .8rem; }
+      .stat { border: 1px solid var(--line); border-left: 0; padding: .5rem .6rem; }
+      .stat:first-child { border-left: 1px solid var(--line); }
+      .stat small { color: var(--muted); display: block; font: 700 .6rem ui-monospace, monospace; letter-spacing: .05em; text-transform: uppercase; }
+      .stat strong { font: 700 1.05rem ui-monospace, monospace; letter-spacing: -.03em; }
+
+      .tabs { border-bottom: 1px solid var(--line-strong); display: flex; overflow-x: auto; padding: 0 max(1rem, 4vw); }
+      .tabs button { background: transparent; border: 0; border-right: 1px solid var(--line); color: var(--muted); cursor: pointer; font: 700 .7rem ui-monospace, monospace; padding: .7rem .8rem; text-transform: uppercase; white-space: nowrap; }
+      .tabs button:first-child { border-left: 1px solid var(--line); }
+      .tabs button[aria-current="page"] { background: var(--blue); color: #fff; }
+
+      main { margin: 0 auto; max-width: 1100px; padding: 1.1rem max(1rem, 4vw) 4rem; }
+
+      .step { border-left: 3px solid var(--line); display: grid; gap: .35rem; grid-template-columns: 7.5rem minmax(0, 1fr); margin: .1rem 0; padding: .55rem 0 .55rem .7rem; }
+      .step.system { border-color: var(--muted); }
+      .step.user { border-color: var(--blue); }
+      .step.agent { border-color: var(--green); }
+      .gutter { color: var(--muted); font: 700 .64rem ui-monospace, monospace; }
+      .gutter .who { color: var(--ink); display: block; font-size: .72rem; text-transform: uppercase; }
+      .gutter .who.system { color: var(--muted); } .gutter .who.user { color: var(--blue); } .gutter .who.agent { color: var(--green); }
+      .gutter .chip { color: var(--muted); display: inline-block; margin-top: .3rem; }
+      .body { min-width: 0; }
+      .msg { background: var(--surface); border: 1px solid var(--line); margin: 0; padding: .55rem .65rem; white-space: pre-wrap; word-break: break-word; font-size: .9rem; line-height: 1.45; }
+      .step.agent .msg { background: var(--green-soft); }
+      details.tool { border: 1px solid var(--line); margin-top: .45rem; }
+      details.tool > summary { cursor: pointer; display: flex; gap: .5rem; padding: .4rem .55rem; align-items: baseline; }
+      details.tool > summary::-webkit-details-marker { display: none; }
+      .tool-kind { color: var(--blue); font: 800 .62rem ui-monospace, monospace; text-transform: uppercase; white-space: nowrap; }
+      .tool-kind.patch { color: var(--orange); }
+      .tool-cmd-inline { color: var(--ink); font: .78rem ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      pre.block { background: var(--code); border-top: 1px solid var(--line); margin: 0; max-height: 30rem; overflow: auto; padding: .55rem .65rem; font-size: .78rem; line-height: 1.4; white-space: pre; }
+      pre.wrap { white-space: pre-wrap; word-break: break-word; }
+      .diff .add { color: var(--green); } .diff .del { color: var(--orange); } .diff .hunk { color: var(--blue); } .diff .file { color: var(--ink); font-weight: 800; }
+      .card { border: 1px solid var(--line); margin-bottom: 1rem; }
+      .card h3 { background: var(--surface); border-bottom: 1px solid var(--line); font: 800 .7rem ui-monospace, monospace; letter-spacing: .04em; margin: 0; padding: .5rem .65rem; text-transform: uppercase; }
+      .kv { display: grid; grid-template-columns: max-content minmax(0,1fr); }
+      .kv dt { color: var(--muted); font: 700 .72rem ui-monospace, monospace; padding: .35rem .65rem; border-bottom: 1px solid var(--line); }
+      .kv dd { font: .8rem ui-monospace, monospace; margin: 0; overflow-wrap: anywhere; padding: .35rem .65rem; border-bottom: 1px solid var(--line); }
+      .tests li.failed { color: var(--orange); } .tests li.passed { color: var(--green); }
+      .hint { color: var(--muted); }
+      .hidden { display: none; }
+      @media (max-width: 640px) { .step { grid-template-columns: 1fr; } .gutter .chip { margin-right: .6rem; } }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <a class="crumb" href="../">← study dashboard</a>
+      <h1 id="title">Attempt</h1>
+      <div class="badges" id="badges"></div>
+      <div class="stats" id="stats"></div>
+    </header>
+    <nav class="tabs" id="tabs">
+      <button data-tab="chat" aria-current="page">Chat</button>
+      <button data-tab="environment">Environment</button>
+      <button data-tab="diff">Diff</button>
+      <button data-tab="verifier">Verifier</button>
+      <button data-tab="raw">Raw</button>
+    </nav>
+    <main id="view"></main>
+    <script type="module" src="./attempt.js"></script>
+  </body>
+</html>
