@@ -65,9 +65,30 @@ class AnalysisExportWriter:
         payload: DashboardPayload,
     ) -> tuple[tuple[str, tuple[dict[str, Any], ...]], ...]:
         return tuple(
-            (table_name, getattr(payload, table_name))
+            (
+                table_name,
+                _attempt_provenance_rows(payload)
+                if table_name == "attempts"
+                else getattr(payload, table_name),
+            )
             for table_name in EXPORT_TABLES
         )
+
+
+def _attempt_provenance_rows(payload: DashboardPayload) -> tuple[dict[str, Any], ...]:
+    benchmark = payload.study.get("benchmark", "deepswe")
+    tier_by_task = {
+        task_row.get("task"): task_row.get("tier")
+        for task_row in payload.tasks
+    }
+    return tuple(
+        {
+            **row,
+            "benchmark": benchmark,
+            "tier": tier_by_task.get(row.get("task")),
+        }
+        for row in payload.attempts
+    )
 
 
 def _canonical_json(row: dict[str, Any]) -> str:

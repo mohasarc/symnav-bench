@@ -10,8 +10,8 @@ from symnav_bench.batch_plan import TrialSlot, plan_trial_slots, slot_id
 from symnav_bench.cells.attempt import AttemptRecord
 from symnav_bench.cells.attempt import SlotResult
 from symnav_bench.cells.cell import Cell
-from symnav_bench.study import StudyManifest
-from symnav_bench.suite import SuiteManifest, parse_suite_manifest
+from symnav_bench.study import FitTier, StudyManifest
+from symnav_bench.suite import SuiteManifest, TaskManifestEntry, parse_suite_manifest
 
 
 @dataclass(frozen=True)
@@ -65,6 +65,7 @@ class TaskMetrics:
     mean_steps: float | None
     mean_duration_seconds: float | None
     adoption: AdoptionSummary | None
+    tier: FitTier | None = None
 
 
 @dataclass(frozen=True)
@@ -180,7 +181,7 @@ def compute_configuration_metrics(
     configuration_id = _configuration_id(dataset, key)
     complete_tasks = _complete_tasks(dataset, configuration_id)
     task_metrics = tuple(
-        _effectiveness_task_metrics(task.slug, results)
+        _effectiveness_task_metrics(task, results)
         for task in dataset.suite.tasks
     )
     completed_metrics = [
@@ -306,6 +307,11 @@ def _compatibility_mismatch(
         return "study ID"
     if raw.get("protocol_fingerprint") != manifest.protocol_fingerprint():
         return "protocol fingerprint"
+    declared = manifest.protocol.benchmark
+    if harness.get("benchmark", "deepswe") != declared.name:
+        return "benchmark"
+    if harness.get("benchmark_source_revision", harness.get("deep_swe_sha")) != declared.source_revision:
+        return "benchmark"
     if (
         harness.get("deep_swe_sha") != manifest.protocol.benchmark.source_revision
         or (
@@ -420,17 +426,17 @@ def _complete_tasks(dataset: StudyDataset, configuration_id: str) -> set[str]:
 
 
 def _effectiveness_task_metrics(
-    task: str,
+    task: TaskManifestEntry,
     results: tuple[SlotResult, ...],
 ) -> TaskMetrics:
     attempts = [
         result.scored_attempt
         for result in results
-        if result.slot.task == task and result.scored_attempt is not None
+        if result.slot.task == task.slug and result.scored_attempt is not None
     ]
     costs = _usage_values(attempts, "cost_usd_imputed")
     return TaskMetrics(
-        task=task,
+        task=task.slug,
         scored_trials=len(attempts),
         pass_fraction=(
             mean(attempt.disposition.outcome == "passed" for attempt in attempts)
@@ -452,6 +458,7 @@ def _effectiveness_task_metrics(
             [_duration_seconds(attempt) for attempt in attempts]
         ),
         adoption=_task_adoption(attempts),
+        tier=task.tier,
     )
 
 
