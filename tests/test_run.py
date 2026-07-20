@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
 import yaml
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import symnav_bench.cli as cli
@@ -19,8 +20,12 @@ from symnav_bench.run.limits import next_backoff, parse_limit_reset
 from symnav_bench.run.runner import CellRunner, StudyRunContext, build_pier_run_command, find_trial_dir
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, Condition
-from symnav_bench.study import AgentConfiguration
-from symnav_bench.suite import TaskManifestEntry
+from symnav_bench.study import AgentConfiguration, BenchmarkSelection
+from symnav_bench.suite import SuiteManifest, TaskManifestEntry
+
+
+STUDY_FIXTURES = Path(__file__).parent / "fixtures" / "studies"
+POLYBENCH_REVISION = "1234567890abcdef1234567890abcdef12345678"
 
 
 def test_cli_has_package_version_fallback() -> None:
@@ -227,6 +232,124 @@ def test_study_runner_pins_bundle_task_and_agent_identity(tmp_path) -> None:
     assert attempt.harness.deep_swe_sha == "a" * 40
 
 
+def test_study_run_context_from_environment_exposes_v2_benchmark_selection(
+    tmp_path, monkeypatch
+) -> None:
+    checkout = _write_symnav_checkout(tmp_path)
+    monkeypatch.setenv(
+        "SYMNAV_BENCH_STUDY_MANIFEST", str(STUDY_FIXTURES / "swe-polybench-v2-manifest.yml")
+    )
+    monkeypatch.setenv(
+        "SYMNAV_BENCH_SUITE_MANIFEST", str(STUDY_FIXTURES / "swe-polybench-v2-suite.json")
+    )
+    monkeypatch.setenv("SYMNAV_BENCH_SYMNAV_CHECKOUT", str(checkout))
+    monkeypatch.setenv("SYMNAV_BENCH_CONFIGURATION_ID", "codex-gpt-5.6-terra-medium")
+
+    context = StudyRunContext.from_environment()
+
+    assert context is not None
+    assert context.benchmark == BenchmarkSelection(
+        name="swe-polybench",
+        source_revision=POLYBENCH_REVISION,
+        tiers=("high", "mid"),
+    )
+    assert context.suite.benchmark == "swe-polybench"
+    assert context.tasks["microsoft__vscode-12345"].tier == "high"
+    assert context.configuration.id == "codex-gpt-5.6-terra-medium"
+    assert context.wall_clock_seconds == 9000
+
+
+def test_study_runner_materializes_non_deepswe_tasks_before_pier(tmp_path) -> None:
+    task = TaskManifestEntry("microsoft__vscode-12345", "typescript", "f" * 64, tier="high")
+    suite = SuiteManifest("swe-polybench", POLYBENCH_REVISION, (task,), "e" * 64)
+    selection = BenchmarkSelection("swe-polybench", POLYBENCH_REVISION, ("high",))
+    configuration = AgentConfiguration(
+        "codex-terra-medium", AgentSpec("codex", "terra", "medium"), "0.31.0"
+    )
+    context = StudyRunContext(
+        configuration, suite, _integration_bundle(tmp_path), 9000, selection
+    )
+    workdir = tmp_path / "tasks-workdir"
+    workdir.mkdir()
+    materialized_dir = tmp_path / "materialized"
+    materializer_calls = []
+
+    def materializer(benchmark, declared_suite, slugs, target):
+        materializer_calls.append((benchmark, declared_suite, tuple(slugs), target))
+        materialized_dir.mkdir(exist_ok=True)
+        return materialized_dir
+
+    config = RunConfig(
+        specs=[configuration.spec], conditions=[Condition("stock")],
+        tasks=["microsoft__vscode-12345"], reps=1, rep_start=0, parallel=1,
+        timeout_multiplier=None, max_limit_wait=timedelta(minutes=1),
+        results_dir=tmp_path / "results", tasks_dir=workdir,
+    )
+    captured = []
+
+    def pier(job_yaml, jobs_dir):
+        captured.append(yaml.safe_load(job_yaml.read_text()))
+        (jobs_dir / "agent").mkdir()
+        (jobs_dir / "agent/trajectory.json").write_text('{"steps":[]}', encoding="utf-8")
+        (jobs_dir / "result.json").write_text(
+            '{"verifier_result":{"rewards":{"f2p":1.0}}}', encoding="utf-8"
+        )
+
+    runner = CellRunner(
+        config, _harness(), pier, study_context=context, materializer=materializer
+    )
+    attempt = runner.run_all()[0]
+
+    assert materializer_calls == [
+        (selection, suite, ("microsoft__vscode-12345",), workdir)
+    ]
+    assert captured[0]["tasks"] == [
+        {"path": str(materialized_dir / "microsoft__vscode-12345")}
+    ]
+    assert attempt.harness.deep_swe_sha == POLYBENCH_REVISION
+
+
+def test_run_cli_rejects_adhoc_non_deepswe_suite(tmp_path, monkeypatch, capsys) -> None:
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        json.dumps(
+            {
+                "benchmark": "multi-swe-bench",
+                "source_revision": "3" * 40,
+                "fingerprint": "4" * 64,
+                "tasks": [
+                    {
+                        "slug": "mui__material-ui-1",
+                        "language": "typescript",
+                        "checksum": "5" * 64,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("SYMNAV_BENCH_STUDY_MANIFEST", raising=False)
+    monkeypatch.delenv("SYMNAV_BENCH_SYMNAV_CHECKOUT", raising=False)
+    monkeypatch.delenv("SYMNAV_BENCH_CONFIGURATION_ID", raising=False)
+    monkeypatch.setenv("SYMNAV_BENCH_SUITE_MANIFEST", str(suite_path))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+
+    exit_code = cli.main(
+        [
+            "run",
+            "--agent", "claude:m:e",
+            "--tasks", "mui__material-ui-1",
+            "--results-dir", str(tmp_path / "results"),
+            "--symnav-ref", "a" * 40,
+        ]
+    )
+
+    assert exit_code == 1
+    error = capsys.readouterr().err
+    assert "declared study" in error
+    assert "multi-swe-bench" in error
+
+
 def test_runner_normalizes_pier_trial_result_after_agent_failure(tmp_path) -> None:
     config = RunConfig(
         specs=[AgentSpec("codex", "m", "e")],
@@ -314,6 +437,37 @@ def _harness():
     from symnav_bench.cells.normalize import HarnessMeta
 
     return HarnessMeta("image", "pier", "deep", None)
+
+
+def _write_symnav_checkout(root):
+    checkout = root / "symnav"
+    catalog = {
+        "schemaVersion": 1,
+        "sharedRulesFile": ".agents/integrations/symnav/shared-rules.md",
+        "bundles": [
+            {
+                "id": "full",
+                "skillDirectory": ".agents/skills/symnav",
+                "rulesFile": ".agents/integrations/symnav/full/rules.md",
+                "allowedCommands": ["overview", "resolve", "def", "refs", "context", "graph"],
+                "claudeSettingsFile": ".agents/integrations/symnav/full/claude-settings.json",
+                "claudeHookFile": ".agents/integrations/symnav/full/symnav-nudge.js",
+            },
+        ],
+    }
+    files = {
+        ".agents/integrations/symnav/catalog.json": json.dumps(catalog, sort_keys=True),
+        ".agents/integrations/symnav/shared-rules.md": "shared\n",
+        ".agents/skills/symnav/SKILL.md": "skill\n",
+        ".agents/integrations/symnav/full/rules.md": "rules\n",
+        ".agents/integrations/symnav/full/claude-settings.json": "{}\n",
+        ".agents/integrations/symnav/full/symnav-nudge.js": "hook\n",
+    }
+    for relative_path, content in files.items():
+        path = checkout / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    return checkout
 
 
 def _integration_bundle(tmp_path):

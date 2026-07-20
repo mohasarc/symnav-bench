@@ -8,7 +8,7 @@ import pytest
 from symnav_bench.benchmark_sources import BenchmarkTaskSource, benchmark_task_source
 from symnav_bench.benchmark_sources.deepswe_source import DeepsweTaskSource
 from symnav_bench.study import BenchmarkName, BenchmarkSelection
-from symnav_bench.suite import build_suite_manifest
+from symnav_bench.suite import SuiteManifest, build_suite_manifest
 
 
 DEEPSWE_SELECTION = BenchmarkSelection(name="deepswe", source_revision="a" * 40, tiers=None)
@@ -19,6 +19,19 @@ def test_factory_returns_deepswe_source_for_deepswe_selection() -> None:
     assert isinstance(source, DeepsweTaskSource)
     assert isinstance(source, BenchmarkTaskSource)
     assert source.selection == DEEPSWE_SELECTION
+
+
+def test_factory_threads_declared_suite_into_non_deepswe_sources() -> None:
+    suite = SuiteManifest(
+        benchmark="swe-polybench", source_revision="c" * 40, tasks=(), fingerprint="d" * 64
+    )
+    selection = BenchmarkSelection(
+        name="swe-polybench", source_revision="c" * 40, tiers=("high",)
+    )
+
+    source = benchmark_task_source(selection, suite=suite)
+
+    assert source.suite is suite
 
 
 def test_factory_rejects_benchmarks_without_a_registered_source() -> None:
