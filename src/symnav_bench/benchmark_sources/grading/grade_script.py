@@ -333,6 +333,7 @@ def cmd_prepare():
     subprocess.call(
         ["git", "config", "--global", "--add", "safe.directory", app_dir(config)]
     )
+    subprocess.call(["git", "reset", "--hard"])
 
     test_patch = os.path.join(tests_dir(), "test.patch")
     if apply_patch(test_patch) != 0:

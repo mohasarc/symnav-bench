@@ -342,6 +342,27 @@ def test_prepare_grades_unappliable_model_patch_as_apply_failed(tmp_path: Path) 
     assert (repo / "spec.txt").exists()
 
 
+def test_prepare_resets_image_baked_edits_so_model_patch_applies(
+    tmp_path: Path,
+) -> None:
+    repo, base_commit, test_patch, _ = prepare_repo(tmp_path)
+    (repo / "source.txt").write_text("image-baked\nfixed\n", encoding="utf-8")
+    model_patch = git(repo, "diff")
+    git(repo, "reset", "-q", "--hard", base_commit)
+    (repo / "source.txt").write_text("image-baked\n", encoding="utf-8")
+    env = grading_dirs(tmp_path, grading_config(base_commit=base_commit), run_log=None)
+    (Path(env["TESTS_DIR"]) / "test.patch").write_text(test_patch, encoding="utf-8")
+    artifacts = Path(env["ARTIFACTS_DIR"])
+    artifacts.mkdir()
+    (artifacts / "model.patch").write_text(model_patch, encoding="utf-8")
+
+    run_grade_script(env, "prepare")
+
+    assert (repo / "source.txt").read_text(encoding="utf-8") == "image-baked\nfixed\n"
+    assert (repo / "spec.txt").read_text(encoding="utf-8") == "spec\n"
+    assert not (tmp_path / "verifier" / "reward.json").exists()
+
+
 def test_prepare_without_model_patch_grades_pristine_state(tmp_path: Path) -> None:
     repo, base_commit, test_patch, _ = prepare_repo(tmp_path)
     env = grading_dirs(tmp_path, grading_config(base_commit=base_commit), run_log=None)
