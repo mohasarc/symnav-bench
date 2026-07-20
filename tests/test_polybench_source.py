@@ -1,12 +1,26 @@
 from __future__ import annotations
 
-import pytest
+import copy
+import hashlib
+import json
+from pathlib import Path
 
+import pytest
+import yaml
+
+import symnav_bench.deepswe
+from symnav_bench.benchmark_sources import benchmark_task_source, swe_polybench_source
 from symnav_bench.benchmark_sources.swe_polybench_source import (
     PolybenchChangeShape,
+    SwePolybenchTaskSource,
     fit_tier,
     parse_polybench_rows,
 )
+from symnav_bench.cli import main
+from symnav_bench.study import BenchmarkSelection
+from symnav_bench.suite import suite_fingerprint
+
+POLYBENCH_REVISION = "a" * 40
 
 
 def change_shape(
@@ -178,3 +192,208 @@ def test_f2f_column_present_absent_or_populated_is_tolerated() -> None:
     ]
 
     assert parsed[0] == parsed[1] == parsed[2]
+
+
+def tiered_rows() -> list[dict[str, str]]:
+    return [
+        dataset_row(
+            instance_id="b-high",
+            modified_nodes='["n1", "n2", "n3", "n4", "n5", "n6"]',
+            num_func_changes="1",
+            num_class_changes="0",
+        ),
+        dataset_row(instance_id="c-mid"),
+        dataset_row(instance_id="a-low", is_single_func="True"),
+        dataset_row(instance_id="js-1", language="JavaScript"),
+    ]
+
+
+def polybench_source(
+    rows: list[dict[str, str]], tiers: tuple[str, ...] = ("high", "mid")
+) -> SwePolybenchTaskSource:
+    selection = BenchmarkSelection(
+        name="swe-polybench", source_revision=POLYBENCH_REVISION, tiers=tiers
+    )
+    return SwePolybenchTaskSource(selection, load_rows=lambda revision: rows)
+
+
+def test_factory_returns_polybench_source_for_polybench_selection() -> None:
+    selection = BenchmarkSelection(
+        name="swe-polybench", source_revision=POLYBENCH_REVISION, tiers=("high",)
+    )
+
+    source = benchmark_task_source(selection)
+
+    assert isinstance(source, SwePolybenchTaskSource)
+    assert source.selection == selection
+
+
+def test_resolve_builds_sorted_v2_suite_for_selected_tiers() -> None:
+    suite = polybench_source(tiered_rows()).resolve()
+
+    assert suite.benchmark == "swe-polybench"
+    assert suite.source_revision == POLYBENCH_REVISION
+    assert [task.slug for task in suite.tasks] == ["b-high", "c-mid"]
+    assert [task.tier for task in suite.tasks] == ["high", "mid"]
+    assert all(task.language == "typescript" for task in suite.tasks)
+    assert suite.fingerprint == suite_fingerprint(
+        "swe-polybench", POLYBENCH_REVISION, suite.tasks
+    )
+
+
+def test_resolve_with_all_tiers_keeps_every_typescript_task() -> None:
+    suite = polybench_source(tiered_rows(), tiers=("high", "mid", "low")).resolve()
+
+    assert [task.slug for task in suite.tasks] == ["a-low", "b-high", "c-mid"]
+    assert [task.tier for task in suite.tasks] == ["low", "high", "mid"]
+
+
+def test_resolve_rejects_empty_tier_selection_result() -> None:
+    rows = [dataset_row(instance_id="a-low", is_single_func="True")]
+
+    with pytest.raises(ValueError, match="no tasks"):
+        polybench_source(rows, tiers=("high",)).resolve()
+
+
+def test_resolve_rejects_selection_without_tiers() -> None:
+    selection = BenchmarkSelection(
+        name="swe-polybench", source_revision=POLYBENCH_REVISION, tiers=None
+    )
+
+    with pytest.raises(ValueError, match="tiers"):
+        SwePolybenchTaskSource(selection, load_rows=lambda revision: []).resolve()
+
+
+def test_resolve_is_deterministic_and_checksum_is_content_sensitive() -> None:
+    assert polybench_source(tiered_rows()).resolve() == polybench_source(
+        tiered_rows()
+    ).resolve()
+
+    edited_rows = tiered_rows()
+    edited_rows[0]["test_patch"] = "diff --git a/other.ts b/other.ts"
+    original = polybench_source(tiered_rows()).resolve()
+    edited = polybench_source(edited_rows).resolve()
+
+    assert original.tasks[0].checksum != edited.tasks[0].checksum
+    assert original.fingerprint != edited.fingerprint
+
+
+def test_resolve_passes_pinned_revision_to_loader() -> None:
+    revisions: list[str] = []
+
+    def load_rows(revision: str) -> list[dict[str, str]]:
+        revisions.append(revision)
+        return tiered_rows()
+
+    selection = BenchmarkSelection(
+        name="swe-polybench", source_revision=POLYBENCH_REVISION, tiers=("high",)
+    )
+    SwePolybenchTaskSource(selection, load_rows=load_rows).resolve()
+
+    assert revisions == [POLYBENCH_REVISION]
+
+
+def test_ensure_tasks_dir_is_not_implemented_yet(tmp_path: Path) -> None:
+    with pytest.raises(NotImplementedError):
+        polybench_source(tiered_rows()).ensure_tasks_dir(["b-high"], tmp_path)
+
+
+def polybench_manifest_data() -> dict:
+    protocol = {
+        "benchmark": {
+            "name": "swe-polybench",
+            "source": {"revision": POLYBENCH_REVISION},
+            "tiers": ["high", "mid"],
+        },
+        "symnav": {
+            "sha": "b" * 40,
+            "kind": "main",
+            "evaluation_sequence": 1,
+            "base_ref": "main",
+            "base_sha": "b" * 40,
+            "pull_request": None,
+        },
+        "repetitions": 2,
+        "wall_clock_seconds": 9_000,
+        "randomization_seed": 7,
+        "conditions": ["stock", "symnav"],
+        "scoring_policy": "deepswe-pass-fraction-v1",
+        "practical_uplift_points": 5.0,
+    }
+    return {
+        "schema_version": 2,
+        "id": "swe-polybench-ts-himid-test",
+        "protocol_fingerprint": fingerprint(protocol),
+        "protocol": protocol,
+        "configurations": [
+            {
+                "id": "codex-terra-medium",
+                "agent": "codex",
+                "model": "gpt-5.6-terra",
+                "effort": "medium",
+                "agent_version": "0.31.0",
+            }
+        ],
+    }
+
+
+def fingerprint(protocol: dict) -> str:
+    canonical = json.dumps(protocol, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def write_manifest(path: Path, data: dict) -> Path:
+    path.write_text(yaml.safe_dump(copy.deepcopy(data), sort_keys=False), encoding="utf-8")
+    return path
+
+
+def test_resolve_suite_cli_writes_identical_polybench_suites_across_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        swe_polybench_source, "load_dataset_rows", lambda revision: tiered_rows()
+    )
+    manifest = write_manifest(tmp_path / "manifest.yml", polybench_manifest_data())
+    first_out = tmp_path / "first-suite.json"
+    second_out = tmp_path / "second-suite.json"
+
+    assert main(["resolve-suite", "--study", str(manifest), "--out", str(first_out)]) == 0
+    assert main(["resolve-suite", "--study", str(manifest), "--out", str(second_out)]) == 0
+
+    assert first_out.read_bytes() == second_out.read_bytes()
+    payload = json.loads(first_out.read_text(encoding="utf-8"))
+    assert payload["benchmark"] == "swe-polybench"
+    assert payload["source_revision"] == POLYBENCH_REVISION
+    assert [task["tier"] for task in payload["tasks"]] == ["high", "mid"]
+    assert "swe-polybench-ts-himid-test: 2 tasks, 8 slots" in capsys.readouterr().out
+
+
+def test_resolve_suite_cli_resolves_deepswe_studies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    checkout = tmp_path / "deep-swe"
+    (checkout / ".git").mkdir(parents=True)
+    task_dir = checkout / "tasks" / "alpha"
+    task_dir.mkdir(parents=True)
+    (task_dir / "task.toml").write_text(
+        '[metadata]\nlanguage = "typescript"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("DEEPSWE_ROOT", str(checkout))
+    monkeypatch.setattr(symnav_bench.deepswe, "_run", lambda command: None)
+    data = polybench_manifest_data()
+    data["id"] = "deepswe-ts-test"
+    data["protocol"]["benchmark"] = {
+        "name": "deepswe",
+        "source": {"revision": POLYBENCH_REVISION},
+    }
+    data["protocol_fingerprint"] = fingerprint(data["protocol"])
+    manifest = write_manifest(tmp_path / "manifest.yml", data)
+    out = tmp_path / "suite.json"
+
+    assert main(["resolve-suite", "--study", str(manifest), "--out", str(out)]) == 0
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["deep_swe_sha"] == POLYBENCH_REVISION
+    assert "benchmark" not in payload
+    assert [task["slug"] for task in payload["tasks"]] == ["alpha"]
+    assert "deepswe-ts-test: 1 tasks, 4 slots" in capsys.readouterr().out
