@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
 import json
+import os
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from typing import Protocol
 
 from symnav_bench.dataset_fetch import HttpResponse
@@ -11,6 +14,8 @@ GHCR_HOST = "https://ghcr.io"
 GHCR_TOKEN_URL = f"{GHCR_HOST}/token?service=ghcr.io"
 DOCKER_HUB_REGISTRY_HOST = "https://registry-1.docker.io"
 DOCKER_HUB_TOKEN_URL = "https://auth.docker.io/token?service=registry.docker.io"
+DOCKER_HUB_USERNAME_VARIABLE = "DOCKER_HUB_USERNAME"
+DOCKER_HUB_TOKEN_VARIABLE = "DOCKER_HUB_TOKEN"
 MANIFEST_ACCEPT = ", ".join(
     (
         "application/vnd.oci.image.index.v1+json",
@@ -33,45 +38,89 @@ def open_request(url: str, headers: dict[str, str]) -> HttpResponse:
     return urllib.request.urlopen(request)
 
 
+@dataclass(frozen=True)
+class RegistryCredentials:
+    username: str
+    token: str
+
+    def basic_auth_header(self) -> str:
+        encoded = base64.b64encode(f"{self.username}:{self.token}".encode()).decode()
+        return f"Basic {encoded}"
+
+
+def docker_hub_credentials_from_environment() -> RegistryCredentials | None:
+    username = os.environ.get(DOCKER_HUB_USERNAME_VARIABLE)
+    token = os.environ.get(DOCKER_HUB_TOKEN_VARIABLE)
+    if username and token:
+        return RegistryCredentials(username=username, token=token)
+    return None
+
+
+class RegistryDigestResolver:
+    def __init__(
+        self,
+        token_url: str,
+        registry_host: str,
+        credentials: RegistryCredentials | None = None,
+        opener: RequestOpener | None = None,
+    ) -> None:
+        self.token_url = token_url
+        self.registry_host = registry_host
+        self.credentials = credentials
+        self.opener: RequestOpener = opener if opener is not None else open_request
+        self.pull_tokens: dict[str, str] = {}
+
+    def resolve(self, repository: str, tag: str) -> str | None:
+        try:
+            token = self.pull_token(repository)
+            manifest_url = f"{self.registry_host}/v2/{repository}/manifests/{tag}"
+            headers = {"Authorization": f"Bearer {token}", "Accept": MANIFEST_ACCEPT}
+            with self.opener(manifest_url, headers) as response:
+                digest = response.headers.get("Docker-Content-Digest")
+        except urllib.error.HTTPError as error:
+            if error.code in MISSING_IMAGE_STATUSES:
+                return None
+            raise
+        if not digest:
+            raise ValueError(f"registry returned no digest for {repository}:{tag}")
+        return digest
+
+    def pull_token(self, repository: str) -> str:
+        cached = self.pull_tokens.get(repository)
+        if cached is not None:
+            return cached
+        url = f"{self.token_url}&scope=repository:{repository}:pull"
+        headers: dict[str, str] = {}
+        if self.credentials is not None:
+            headers["Authorization"] = self.credentials.basic_auth_header()
+        with self.opener(url, headers) as response:
+            token = json.loads(response.read())["token"]
+        self.pull_tokens[repository] = token
+        return token
+
+
+def docker_hub_digest_resolver(
+    opener: RequestOpener | None = None,
+) -> RegistryDigestResolver:
+    return RegistryDigestResolver(
+        DOCKER_HUB_TOKEN_URL,
+        DOCKER_HUB_REGISTRY_HOST,
+        credentials=docker_hub_credentials_from_environment(),
+        opener=opener if opener is not None else open_request,
+    )
+
+
 def resolve_ghcr_image_digest(
     repository: str, tag: str, *, opener: RequestOpener = open_request
 ) -> str | None:
-    return resolve_image_digest(GHCR_TOKEN_URL, GHCR_HOST, repository, tag, opener)
+    return RegistryDigestResolver(GHCR_TOKEN_URL, GHCR_HOST, opener=opener).resolve(
+        repository, tag
+    )
 
 
 def resolve_docker_hub_image_digest(
     repository: str, tag: str, *, opener: RequestOpener = open_request
 ) -> str | None:
-    return resolve_image_digest(
-        DOCKER_HUB_TOKEN_URL, DOCKER_HUB_REGISTRY_HOST, repository, tag, opener
-    )
-
-
-def resolve_image_digest(
-    token_url: str,
-    registry_host: str,
-    repository: str,
-    tag: str,
-    opener: RequestOpener,
-) -> str | None:
-    try:
-        token = anonymous_pull_token(token_url, repository, opener)
-        manifest_url = f"{registry_host}/v2/{repository}/manifests/{tag}"
-        headers = {"Authorization": f"Bearer {token}", "Accept": MANIFEST_ACCEPT}
-        with opener(manifest_url, headers) as response:
-            digest = response.headers.get("Docker-Content-Digest")
-    except urllib.error.HTTPError as error:
-        if error.code in MISSING_IMAGE_STATUSES:
-            return None
-        raise
-    if not digest:
-        raise ValueError(f"registry returned no digest for {repository}:{tag}")
-    return digest
-
-
-def anonymous_pull_token(
-    token_url: str, repository: str, opener: RequestOpener
-) -> str:
-    url = f"{token_url}&scope=repository:{repository}:pull"
-    with opener(url, {}) as response:
-        return json.loads(response.read())["token"]
+    return RegistryDigestResolver(
+        DOCKER_HUB_TOKEN_URL, DOCKER_HUB_REGISTRY_HOST, opener=opener
+    ).resolve(repository, tag)

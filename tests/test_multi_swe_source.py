@@ -390,7 +390,11 @@ def test_resolve_suite_cli_writes_identical_multi_swe_suites_across_runs(
     monkeypatch.setattr(
         multi_swe_bench_source, "load_dataset_rows", lambda revision: three_repo_rows()
     )
-    monkeypatch.setattr(multi_swe_bench_source, "resolve_eval_image", pinned_image)
+    monkeypatch.setattr(
+        multi_swe_bench_source,
+        "resolve_eval_image",
+        lambda instance, registry: pinned_image(instance),
+    )
     manifest = tmp_path / "manifest.yml"
     manifest.write_text(
         yaml.safe_dump(copy.deepcopy(multi_swe_manifest_data()), sort_keys=False),
@@ -556,4 +560,4 @@ def test_default_image_resolution_requests_one_pull_token_per_repository(
     repositories = {eval_image_repository(instance) for instance in
                     parse_multi_swe_rows(three_repo_rows())}
     assert len(token_requests) == len(repositories)
-    assert all(task["image"].endswith(f"@{digest}") for task in suite.tasks)
+    assert all(task.image.endswith(f"@{digest}") for task in suite.tasks)

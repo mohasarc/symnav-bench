@@ -14,7 +14,10 @@ from symnav_bench.benchmark_sources.pier_task_writer import (
     MaterializedTaskSpec,
     write_pier_task_dir,
 )
-from symnav_bench.container_registry import resolve_docker_hub_image_digest
+from symnav_bench.container_registry import (
+    RegistryDigestResolver,
+    docker_hub_digest_resolver,
+)
 from symnav_bench.dataset_fetch import fetch_dataset_files, list_dataset_files
 from symnav_bench.study import BenchmarkSelection
 from symnav_bench.suite import (
@@ -97,9 +100,11 @@ def eval_image_tag(instance: MultiSweInstance) -> str:
     return f"pr-{instance.number}"
 
 
-def resolve_eval_image(instance: MultiSweInstance) -> str | None:
+def resolve_eval_image(
+    instance: MultiSweInstance, registry: RegistryDigestResolver
+) -> str | None:
     repository = eval_image_repository(instance)
-    digest = resolve_docker_hub_image_digest(repository, eval_image_tag(instance))
+    digest = registry.resolve(repository, eval_image_tag(instance))
     if digest is None:
         return None
     return f"{EVAL_IMAGE_REGISTRY}/{repository}@{digest}"
@@ -206,7 +211,10 @@ class MultiSweBenchTaskSource(BenchmarkTaskSource):
         return parse_multi_swe_rows(load_rows(self.selection.source_revision))
 
     def image_resolver(self) -> ImageResolver:
-        return self.resolve_image if self.resolve_image is not None else resolve_eval_image
+        if self.resolve_image is not None:
+            return self.resolve_image
+        registry = docker_hub_digest_resolver()
+        return lambda instance: resolve_eval_image(instance, registry)
 
     def resolve_images(
         self, instances: Sequence[MultiSweInstance]
