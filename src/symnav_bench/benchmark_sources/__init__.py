@@ -17,3 +17,11 @@ class BenchmarkTaskSource(ABC):
 
     @abstractmethod
     def ensure_tasks_dir(self, slugs: Sequence[str], workdir: Path) -> Path: ...
+
+
+def benchmark_task_source(selection: BenchmarkSelection) -> BenchmarkTaskSource:
+    from symnav_bench.benchmark_sources.deepswe_source import DeepsweTaskSource
+
+    if selection.name == "deepswe":
+        return DeepsweTaskSource(selection)
+    raise ValueError(f"no task source registered for benchmark {selection.name!r}")
