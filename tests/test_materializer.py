@@ -5,6 +5,7 @@ import os
 import tomllib
 from pathlib import Path
 
+import pytest
 from pier.models.task.config import TaskConfig
 from pier.models.task.paths import TaskPaths
 
@@ -41,6 +42,27 @@ def task_spec(**overrides: object) -> MaterializedTaskSpec:
     return MaterializedTaskSpec(**values)  # type: ignore[arg-type]
 
 
+MULTI_SWE_IMAGE = "docker.io/mswebench/vuejs_m_core@sha256:" + "b" * 64
+
+
+def multi_swe_overrides() -> dict[str, object]:
+    return {
+        "benchmark": "multi-swe-bench",
+        "slug": "vuejs__core-11899",
+        "instruction": "fix(suspense): nested suspense",
+        "docker_image": MULTI_SWE_IMAGE,
+        "workdir": "/home/core",
+        "test_command": "bash /home/run.sh",
+        "log_parser": "vitest-vuejs",
+    }
+
+
+BENCHMARK_SPEC_OVERRIDES = [
+    pytest.param({}, id="swe-polybench"),
+    pytest.param(multi_swe_overrides(), id="multi-swe-bench"),
+]
+
+
 def write_task(tmp_path: Path, **overrides: object) -> Path:
     return write_pier_task_dir(task_spec(**overrides), tmp_path / "task")
 
@@ -49,16 +71,22 @@ def read_task_toml(task_dir: Path) -> dict[str, object]:
     return tomllib.loads((task_dir / "task.toml").read_text(encoding="utf-8"))
 
 
-def test_written_dir_is_a_valid_pier_task(tmp_path: Path) -> None:
-    task_dir = write_task(tmp_path)
+@pytest.mark.parametrize("overrides", BENCHMARK_SPEC_OVERRIDES)
+def test_written_dir_is_a_valid_pier_task(
+    tmp_path: Path, overrides: dict[str, object]
+) -> None:
+    task_dir = write_task(tmp_path, **overrides)
 
     assert TaskPaths(task_dir).is_valid()
     TaskConfig.model_validate_toml((task_dir / "task.toml").read_text(encoding="utf-8"))
 
 
-def test_materialization_is_byte_deterministic(tmp_path: Path) -> None:
-    first = write_pier_task_dir(task_spec(), tmp_path / "first")
-    second = write_pier_task_dir(task_spec(), tmp_path / "second")
+@pytest.mark.parametrize("overrides", BENCHMARK_SPEC_OVERRIDES)
+def test_materialization_is_byte_deterministic(
+    tmp_path: Path, overrides: dict[str, object]
+) -> None:
+    first = write_pier_task_dir(task_spec(**overrides), tmp_path / "first")
+    second = write_pier_task_dir(task_spec(**overrides), tmp_path / "second")
 
     assert directory_checksum(first) == directory_checksum(second)
 
