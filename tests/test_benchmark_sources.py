@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from symnav_bench.benchmark_sources import BenchmarkTaskSource, benchmark_task_source
 from symnav_bench.benchmark_sources.deepswe_source import DeepsweTaskSource
-from symnav_bench.study import BenchmarkSelection
+from symnav_bench.study import BenchmarkName, BenchmarkSelection
 from symnav_bench.suite import build_suite_manifest
 
 
@@ -20,16 +21,14 @@ def test_factory_returns_deepswe_source_for_deepswe_selection() -> None:
     assert source.selection == DEEPSWE_SELECTION
 
 
-@pytest.mark.parametrize(
-    "selection",
-    [
-        BenchmarkSelection(name="multi-swe-bench", source_revision="b" * 40, tiers=None),
-    ],
-)
-def test_factory_rejects_benchmarks_without_a_registered_source(
-    selection: BenchmarkSelection,
-) -> None:
-    with pytest.raises(ValueError, match=f"no task source registered for benchmark '{selection.name}'"):
+def test_factory_rejects_benchmarks_without_a_registered_source() -> None:
+    selection = BenchmarkSelection(
+        name=cast(BenchmarkName, "future-bench"), source_revision="b" * 40, tiers=None
+    )
+
+    with pytest.raises(
+        ValueError, match="no task source registered for benchmark 'future-bench'"
+    ):
         benchmark_task_source(selection)
 
 

@@ -26,7 +26,7 @@ from symnav_bench.suite import directory_checksum, suite_fingerprint
 MULTI_SWE_REVISION = "d" * 40
 
 
-def test_statuses(names: tuple[str, ...]) -> dict[str, dict[str, str]]:
+def row_test_statuses(names: tuple[str, ...]) -> dict[str, dict[str, str]]:
     return {name: {"run": "NONE", "test": "FAIL", "fix": "PASS"} for name in names}
 
 
@@ -41,13 +41,13 @@ def dataset_row(**overrides: Any) -> dict[str, Any]:
         "base": {"label": "darkreader:master", "ref": "master", "sha": "c" * 40},
         "fix_patch": "diff --git a/src/parse.ts b/src/parse.ts",
         "test_patch": "diff --git a/tests/parse.tests.ts b/tests/parse.tests.ts",
-        "f2p_tests": test_statuses(
+        "f2p_tests": row_test_statuses(
             (
                 "tests/generators/utils/parse.tests.ts:Base64 in CSS",
                 "tests/generators/utils/parse.tests.ts",
             )
         ),
-        "p2p_tests": test_statuses(
+        "p2p_tests": row_test_statuses(
             (
                 "tests/utils/time.tests.ts:Time parse",
                 "tests/utils/time.tests.ts",
