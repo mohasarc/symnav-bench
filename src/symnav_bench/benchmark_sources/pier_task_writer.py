@@ -32,6 +32,7 @@ def write_pier_task_dir(spec: MaterializedTaskSpec, dest: Path) -> Path:
     write_text(dest / "instruction.md", spec.instruction)
     write_script(dest / "pre_artifacts.sh", pre_artifacts_script(spec))
     write_text(environment_dir / "Dockerfile", f"FROM {spec.docker_image}\n")
+    write_text(tests_dir / "Dockerfile", verifier_dockerfile(spec))
     write_script(tests_dir / "test.sh", verifier_script(spec))
     write_script(tests_dir / "run_tests.sh", run_tests_script(spec))
     write_text(tests_dir / "grade.py", spec.grade_script)
@@ -102,6 +103,18 @@ def pre_artifacts_script(spec: MaterializedTaskSpec) -> str:
         " 2>/dev/null || true\n"
         'echo "[pre_artifacts] captured'
         ' $(wc -c < /logs/artifacts/model.patch) bytes"\n'
+    )
+
+
+def verifier_dockerfile(spec: MaterializedTaskSpec) -> str:
+    copies = "".join(
+        f"COPY {name} /tests/{name}\n"
+        for name in ("test.sh", "run_tests.sh", "grade.py", "config.json", "test.patch")
+    )
+    return (
+        f"FROM {spec.docker_image}\n"
+        f"{copies}"
+        "RUN chmod +x /tests/test.sh /tests/run_tests.sh\n"
     )
 
 
