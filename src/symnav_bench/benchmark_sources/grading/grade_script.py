@@ -122,12 +122,111 @@ def parse_bazel_angular(text):
     return TestOutcomes.of(passed, failed)
 
 
+def parse_jest_darkreader(text):
+    passed, failed = set(), set()
+    current_suite = None
+    pass_suite = re.compile(r"^PASS (\S+)(\s*\(.+\))?$")
+    fail_suite = re.compile(r"^FAIL (\S+)(\s*\(.+\))?$")
+    pass_test = re.compile(r"^✓ (.+?)(\s+\(.+\))?$")
+    fail_test = re.compile(r"^✕ (.+?)(\s+\(.+\))?$")
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        pass_suite_match = pass_suite.match(line)
+        if pass_suite_match:
+            current_suite = pass_suite_match.group(1)
+            passed.add(current_suite)
+        fail_suite_match = fail_suite.match(line)
+        if fail_suite_match:
+            current_suite = fail_suite_match.group(1)
+            failed.add(current_suite)
+        pass_test_match = pass_test.match(line)
+        if pass_test_match:
+            if current_suite is None:
+                raise ValueError("Test passed without suite: %s" % line)
+            passed.add("%s:%s" % (current_suite, pass_test_match.group(1)))
+        fail_test_match = fail_test.match(line)
+        if fail_test_match:
+            if current_suite is None:
+                raise ValueError("Test failed without suite: %s" % line)
+            failed.add("%s:%s" % (current_suite, fail_test_match.group(1)))
+    return TestOutcomes.of(passed, failed)
+
+
+def parse_vitest_vuejs(text):
+    passed, failed = set(), set()
+    pass_test = re.compile(r"^✓ (.+?)(?:\s*\d*\.?\d+\s*(?:ms|s|m))?$")
+    fail_test = re.compile(r"^× (.+?)(?:\s*\d*\.?\d+\s*(?:ms|s|m))?$")
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        pass_match = pass_test.match(line)
+        if pass_match:
+            passed.add(pass_match.group(1))
+        fail_match = fail_test.match(line)
+        if fail_match:
+            failed.add(fail_match.group(1))
+    return TestOutcomes.of(passed, failed)
+
+
+MUI_REPORT_KEYS = ("stats", "tests", "pending", "failures", "passes")
+
+
+def mui_test_name(entry):
+    return "%s:%s" % (
+        str(entry.get("file") or ""),
+        str(entry.get("fullTitle") or ""),
+    )
+
+
+def iterate_json_objects(text):
+    decoder = json.JSONDecoder()
+    pos = 0
+    while True:
+        start = text.find("{", pos)
+        if start == -1:
+            return
+        try:
+            document, length = decoder.raw_decode(text[start:])
+        except ValueError:
+            pos = start + 1
+            continue
+        pos = start + length
+        yield document
+
+
+def parse_mocha_mui(text):
+    if "Building new" in text:
+        text = text[text.find("Building new") :]
+    text = re.sub(r"error Command failed with exit code \d+\.", "", text)
+    text = text.replace("\r\n", "").replace("\n", "")
+    passed, failed, skipped = set(), set(), set()
+    for document in iterate_json_objects(text):
+        if not all(key in document for key in MUI_REPORT_KEYS):
+            continue
+        for entry in document.get("passes") or []:
+            passed.add(mui_test_name(entry))
+        for entry in document.get("failures") or []:
+            failed.add(mui_test_name(entry))
+        for entry in document.get("pending") or []:
+            skipped.add(mui_test_name(entry))
+    passed -= failed
+    skipped -= failed
+    passed -= skipped
+    return TestOutcomes.of(passed, failed, skipped)
+
+
 PARSERS = {
     "jest": parse_jest,
     "jest-tailwind": parse_jest_tailwind,
+    "jest-darkreader": parse_jest_darkreader,
     "mocha": parse_mocha,
     "mocha-filename": parse_mocha_filename,
+    "mocha-mui": parse_mocha_mui,
     "bazel-angular": parse_bazel_angular,
+    "vitest-vuejs": parse_vitest_vuejs,
 }
 
 
