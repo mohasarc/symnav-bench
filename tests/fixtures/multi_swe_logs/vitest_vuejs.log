@@ -1,0 +1,17 @@
+> @3.5.13 test-unit /home/core
+> vitest -c vitest.unit.config.ts --no-watch --reporter=verbose
+
+ RUN  v2.0.5 /home/core
+
+ ✓ packages/runtime-core/__tests__/components/Suspense.spec.ts > Suspense > mounted/updated hooks & fallback component 25ms
+ ✓ packages/compiler-sfc/__tests__/compileStyle.spec.ts > SFC scoped CSS > nesting selector with atrule and comment
+ × packages/runtime-core/__tests__/components/Suspense.spec.ts > Suspense > nested suspense (child resolves first) 120ms
+   → expected true to be false
+ ✓ packages/server-renderer/__tests__/render.spec.ts > ssr: renderToNodeStream > components > option components returning render from setup 0.4s
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 3 passed (4)
+   Start at  00:00:00
+   Duration  42.00s
+
+Container exited with status code: 1

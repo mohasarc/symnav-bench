@@ -1,0 +1,65 @@
+yarn run v1.22.19
+$ node scripts/jsonReporterHack.js
+Building new browser bundle for unit tests
+{
+  "stats": {
+    "suites": 3,
+    "tests": 5,
+    "passes": 3,
+    "pending": 1,
+    "failures": 2,
+    "start": "2024-01-01T00:00:00.000Z",
+    "end": "2024-01-01T00:01:00.000Z",
+    "duration": 60000
+  },
+  "tests": [],
+  "pending": [
+    {
+      "title": "should render a subtitle",
+      "fullTitle": "<ImageListItemBar /> props: prop: subtitle should render a subtitle",
+      "file": "/home/material-ui/packages/mui-material/src/ImageListItemBar/ImageListItemBar.test.js",
+      "currentRetry": 0,
+      "err": {}
+    }
+  ],
+  "failures": [
+    {
+      "title": "borders should work",
+      "fullTitle": "borders should work",
+      "file": "/home/material-ui/packages/mui-system/src/borders.test.js",
+      "currentRetry": 0,
+      "duration": 12,
+      "err": {
+        "message": "expected 1px to equal 2px"
+      }
+    },
+    {
+      "title": "resolves system",
+      "fullTitle": "styleFunctionSx system resolves system ",
+      "file": "/home/material-ui/packages/mui-system/src/styleFunctionSx/styleFunctionSx.test.js",
+      "currentRetry": 0,
+      "duration": 3,
+      "err": {}
+    }
+  ],
+  "passes": [
+    {
+      "title": "should work without a classNamePrefix",
+      "fullTitle": "createGenerateClassNameHash classNamePrefix should work without a classNamePrefix",
+      "file": "/home/material-ui/packages/mui-styles/src/createGenerateClassName/createGenerateClassNameHash.test.js",
+      "currentRetry": 0,
+      "duration": 1,
+      "err": {}
+    },
+    {
+      "title": "resolves system",
+      "fullTitle": "styleFunctionSx system resolves system ",
+      "file": "/home/material-ui/packages/mui-system/src/styleFunctionSx/styleFunctionSx.test.js",
+      "currentRetry": 1,
+      "duration": 2,
+      "err": {}
+    }
+  ]
+}
+error Command failed with exit code 2.
+Container exited with status code: 2
