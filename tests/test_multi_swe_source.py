@@ -512,3 +512,48 @@ def test_ensure_tasks_dir_rejects_checksum_drift(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="darkreader__darkreader-7241"):
         source.ensure_tasks_dir(["darkreader__darkreader-7241"], tmp_path)
+
+
+def test_default_image_resolution_requests_one_pull_token_per_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from symnav_bench import container_registry
+
+    requests: list[str] = []
+    digest = "sha256:" + "a" * 64
+
+    class FakeResponse:
+        def __init__(self, body: bytes, headers: dict[str, str]) -> None:
+            self.body = body
+            self.headers = headers
+
+        def read(self, size: int = -1) -> bytes:
+            return self.body
+
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *exc_info: object) -> bool:
+            return False
+
+    def fake_open_request(url: str, headers: dict[str, str]) -> FakeResponse:
+        requests.append(url)
+        if "/token?" in url:
+            return FakeResponse(json.dumps({"token": "t"}).encode(), {})
+        return FakeResponse(b"{}", {"Docker-Content-Digest": digest})
+
+    monkeypatch.setattr(container_registry, "open_request", fake_open_request)
+    selection = BenchmarkSelection(
+        name="multi-swe-bench", source_revision=MULTI_SWE_REVISION, tiers=None
+    )
+    source = MultiSweBenchTaskSource(
+        selection, load_rows=lambda revision: three_repo_rows()
+    )
+
+    suite = source.resolve()
+
+    token_requests = [url for url in requests if "/token?" in url]
+    repositories = {eval_image_repository(instance) for instance in
+                    parse_multi_swe_rows(three_repo_rows())}
+    assert len(token_requests) == len(repositories)
+    assert all(task["image"].endswith(f"@{digest}") for task in suite.tasks)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import json
 import urllib.error
@@ -7,6 +8,7 @@ import urllib.error
 import pytest
 
 from symnav_bench.container_registry import (
+    docker_hub_digest_resolver,
     resolve_docker_hub_image_digest,
     resolve_ghcr_image_digest,
 )
@@ -145,3 +147,48 @@ def test_docker_hub_missing_digest_header_is_an_error() -> None:
 
     with pytest.raises(ValueError, match=DOCKER_HUB_REPOSITORY):
         resolve_docker_hub_image_digest(DOCKER_HUB_REPOSITORY, "pr-1", opener=opener)
+
+
+def test_docker_hub_resolver_sends_basic_auth_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCKER_HUB_USERNAME", "hub-user")
+    monkeypatch.setenv("DOCKER_HUB_TOKEN", "hub-secret")
+    requests: list[tuple[str, dict[str, str]]] = []
+
+    resolver = docker_hub_digest_resolver(opener=registry_opener(requests))
+    digest = resolver.resolve(DOCKER_HUB_REPOSITORY, "pr-7241")
+
+    assert digest == DIGEST
+    token_url, token_headers = requests[0]
+    assert "/token?" in token_url
+    expected = base64.b64encode(b"hub-user:hub-secret").decode()
+    assert token_headers["Authorization"] == f"Basic {expected}"
+
+
+def test_docker_hub_resolver_stays_anonymous_without_environment_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DOCKER_HUB_USERNAME", raising=False)
+    monkeypatch.delenv("DOCKER_HUB_TOKEN", raising=False)
+    requests: list[tuple[str, dict[str, str]]] = []
+
+    resolver = docker_hub_digest_resolver(opener=registry_opener(requests))
+    resolver.resolve(DOCKER_HUB_REPOSITORY, "pr-7241")
+
+    _, token_headers = requests[0]
+    assert "Authorization" not in token_headers
+
+
+def test_digest_resolver_caches_pull_token_per_repository() -> None:
+    requests: list[tuple[str, dict[str, str]]] = []
+    resolver = docker_hub_digest_resolver(opener=registry_opener(requests))
+
+    resolver.resolve(DOCKER_HUB_REPOSITORY, "pr-7241")
+    resolver.resolve(DOCKER_HUB_REPOSITORY, "pr-7242")
+    resolver.resolve("mswebench/vuejs_m_core", "pr-100")
+
+    token_urls = [url for url, _ in requests if "/token?" in url]
+    assert len(token_urls) == 2
+    manifest_urls = [url for url, _ in requests if "/manifests/" in url]
+    assert len(manifest_urls) == 3
