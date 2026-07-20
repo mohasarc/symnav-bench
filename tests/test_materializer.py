@@ -200,3 +200,16 @@ def test_shell_scripts_are_executable(tmp_path: Path) -> None:
         task_dir / "tests" / "run_tests.sh",
     ):
         assert os.access(script, os.X_OK)
+
+
+def test_tests_dockerfile_bakes_verifier_inputs_into_pinned_image(
+    tmp_path: Path,
+) -> None:
+    task_dir = write_task(tmp_path)
+
+    dockerfile = (task_dir / "tests" / "Dockerfile").read_text(encoding="utf-8")
+    lines = dockerfile.strip().splitlines()
+    assert lines[0] == f"FROM {PINNED_IMAGE}"
+    for name in ("test.sh", "run_tests.sh", "grade.py", "config.json", "test.patch"):
+        assert f"COPY {name} /tests/{name}" in lines
+    assert "RUN chmod +x /tests/test.sh /tests/run_tests.sh" in lines
