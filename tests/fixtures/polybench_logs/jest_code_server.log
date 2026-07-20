@@ -1,0 +1,29 @@
+yarn run v1.22.10
+$ jest --json --silent
+PASS test/unit/register.test.ts
+PASS test/unit/health.test.ts
+{"numFailedTestSuites":0,"numFailedTests":0,"numPassedTestSuites":2,"numPassedTests":2,"numPendingTests":1,"numRuntimeErrorTestSuites":0,"numTotalTestSuites":2,"numTotalTests":3,"testResults":[
+    {
+        "name":"/testbed/test/unit/register.test.ts",
+        "assertionResults":[
+            {
+                "fullName": "register when navigator and serviceWorker are NOT defined should log an error",
+                "status":"passed"
+            },
+            {
+                "fullName": "register when navigator and serviceWorker are defined should skip registration",
+                "status":"pending"
+            }
+        ]
+    },
+    {
+        "name":"/testbed/test/unit/health.test.ts",
+        "assertionResults":[
+            {
+                "fullName": "/healthz",
+                "status":"passed"
+            }
+        ]
+    }
+],"wasInterrupted":false}
+Container exited with status code: 0

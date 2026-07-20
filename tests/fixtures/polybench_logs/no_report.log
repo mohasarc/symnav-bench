@@ -1,0 +1,6 @@
+yarn run v1.22.4
+$ gulp compile --max_old_space_size=4095
+[10:21:03] Starting 'compile' ...
+Error: Command failed with exit code 2
+src/vs/editor/contrib/suggest/suggestModel.ts(412,9): error TS2322: Type 'string' is not assignable to type 'number'.
+Container exited with status code: 2

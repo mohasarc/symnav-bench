@@ -1,0 +1,9 @@
+Now using node v8.9.1 (npm v5.5.1)
+{"numFailedTestSuites":1,"numFailedTests":1,"numPassedTestSuites":2,"numPassedTests":2,"numPendingTestSuites":0,"numPendingTests":0,"numRuntimeErrorTestSuites":0,"numTotalTestSuites":3,"numTotalTests":3,"testResults":[
+    {"assertionResults":[{"status":"passed","title":"generates the right CSS with implicit screen utilities"}],"name":"/testbed/__tests__/sanity.test.js"},
+    {"assertionResults":[
+        {"status":"passed","title":"a default value can be provided"},
+        {"status":"failed","title":"it can accept a config file"}
+    ],"name":"/testbed/__tests__/configFunction.test.js"}
+],"wasInterrupted":false}
+Container exited with status code: 1
