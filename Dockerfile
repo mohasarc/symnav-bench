@@ -17,7 +17,8 @@ COPY pyproject.toml requirements.lock README.md LICENSE ./
 COPY src ./src
 RUN python3 -m pip install --break-system-packages --upgrade pip \
   && python3 -m pip install --break-system-packages --no-cache-dir -r requirements.lock \
-  && python3 -m pip install --break-system-packages --no-cache-dir --no-deps .
+  && python3 -m pip install --break-system-packages --no-cache-dir --no-deps . \
+  && python3 -c "from symnav_bench.pier_patches import patch_codex_nvm_install; patch_codex_nvm_install()"
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
