@@ -29,6 +29,10 @@ ConditionName = Literal[
     "resolve-graph",
 ]
 SymnavRevisionKind = Literal["main", "pull_request"]
+BenchmarkName = Literal["deepswe", "swe-polybench", "multi-swe-bench"]
+FitTier = Literal["high", "mid", "low"]
+BENCHMARK_NAMES: tuple[BenchmarkName, ...] = ("deepswe", "swe-polybench", "multi-swe-bench")
+FIT_TIERS: tuple[FitTier, ...] = ("high", "mid", "low")
 CONDITION_NAMES: tuple[ConditionName, ...] = (
     "stock",
     "symnav",
@@ -52,6 +56,13 @@ class AgentConfiguration:
     id: str
     spec: AgentSpec
     agent_version: str
+
+
+@dataclass(frozen=True)
+class BenchmarkSelection:
+    name: BenchmarkName
+    source_revision: str
+    tiers: tuple[FitTier, ...] | None
 
 
 @dataclass(frozen=True)
