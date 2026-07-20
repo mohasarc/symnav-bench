@@ -1,0 +1,174 @@
+from __future__ import annotations
+
+import json
+import os
+import tomllib
+from pathlib import Path
+
+from pier.models.task.config import TaskConfig
+from pier.models.task.paths import TaskPaths
+
+from symnav_bench.benchmark_sources.pier_task_writer import (
+    MaterializedTaskSpec,
+    write_pier_task_dir,
+)
+from symnav_bench.suite import directory_checksum
+
+PINNED_IMAGE = (
+    "ghcr.io/timesler/swe-polybench.eval.x86_64.mui__material-ui-7444@sha256:" + "a" * 64
+)
+
+
+def task_spec(**overrides: object) -> MaterializedTaskSpec:
+    values: dict[str, object] = {
+        "benchmark": "swe-polybench",
+        "slug": "mui__material-ui-7444",
+        "instruction": "Fix the MenuList focus handling.",
+        "docker_image": PINNED_IMAGE,
+        "workdir": "/testbed",
+        "base_commit": "b" * 40,
+        "test_patch": "diff --git a/test/a.js b/test/a.js\n",
+        "f2p": ("suite renders the fixed case",),
+        "p2p": ("suite keeps the old case", "suite keeps another case"),
+        "test_command": (
+            "yarn cross-env NODE_ENV=test mocha test/integration/MenuList.spec.js "
+            "--reporter /testbed/custom-reporter.js --exit"
+        ),
+        "log_parser": "mocha-filename",
+        "grade_script": "print('grade')\n",
+    }
+    values.update(overrides)
+    return MaterializedTaskSpec(**values)  # type: ignore[arg-type]
+
+
+def write_task(tmp_path: Path, **overrides: object) -> Path:
+    return write_pier_task_dir(task_spec(**overrides), tmp_path / "task")
+
+
+def read_task_toml(task_dir: Path) -> dict[str, object]:
+    return tomllib.loads((task_dir / "task.toml").read_text(encoding="utf-8"))
+
+
+def test_written_dir_is_a_valid_pier_task(tmp_path: Path) -> None:
+    task_dir = write_task(tmp_path)
+
+    assert TaskPaths(task_dir).is_valid()
+    TaskConfig.model_validate_toml((task_dir / "task.toml").read_text(encoding="utf-8"))
+
+
+def test_materialization_is_byte_deterministic(tmp_path: Path) -> None:
+    first = write_pier_task_dir(task_spec(), tmp_path / "first")
+    second = write_pier_task_dir(task_spec(), tmp_path / "second")
+
+    assert directory_checksum(first) == directory_checksum(second)
+
+
+def test_checksum_is_sensitive_to_task_content(tmp_path: Path) -> None:
+    original = write_pier_task_dir(task_spec(), tmp_path / "original")
+    edited = write_pier_task_dir(
+        task_spec(test_patch="diff --git a/test/b.js b/test/b.js\n"), tmp_path / "edited"
+    )
+
+    assert directory_checksum(original) != directory_checksum(edited)
+
+
+def test_task_toml_pins_environment_and_verifier(tmp_path: Path) -> None:
+    data = read_task_toml(write_task(tmp_path))
+
+    environment = data["environment"]
+    assert isinstance(environment, dict)
+    assert environment["docker_image"] == PINNED_IMAGE
+    assert environment["workdir"] == "/testbed"
+    verifier = data["verifier"]
+    assert isinstance(verifier, dict)
+    assert verifier["environment_mode"] == "separate"
+    metadata = data["metadata"]
+    assert isinstance(metadata, dict)
+    assert metadata["language"] == "typescript"
+    assert metadata["task_id"] == "mui__material-ui-7444"
+    assert metadata["benchmark"] == "swe-polybench"
+    assert metadata["base_commit_hash"] == "b" * 40
+    assert data["artifacts"] == ["/logs/artifacts/model.patch"]
+    assert "agent" not in data
+
+
+def test_wall_clock_seconds_sets_agent_timeout(tmp_path: Path) -> None:
+    data = read_task_toml(write_task(tmp_path, wall_clock_seconds=5400))
+
+    agent = data["agent"]
+    assert isinstance(agent, dict)
+    assert agent["timeout_sec"] == 5400.0
+
+
+def test_instruction_written_verbatim(tmp_path: Path) -> None:
+    task_dir = write_task(tmp_path)
+
+    written = (task_dir / "instruction.md").read_text(encoding="utf-8")
+    assert written == "Fix the MenuList focus handling."
+
+
+def test_environment_dockerfile_builds_from_pinned_image(tmp_path: Path) -> None:
+    task_dir = write_task(tmp_path)
+
+    dockerfile = (task_dir / "environment" / "Dockerfile").read_text(encoding="utf-8")
+    assert dockerfile == f"FROM {PINNED_IMAGE}\n"
+
+
+def test_grading_inputs_land_in_tests_dir(tmp_path: Path) -> None:
+    task_dir = write_task(tmp_path)
+
+    config = json.loads((task_dir / "tests" / "config.json").read_text(encoding="utf-8"))
+    assert config["benchmark"] == "swe-polybench"
+    assert config["base_commit"] == "b" * 40
+    assert config["docker_image"] == PINNED_IMAGE
+    assert config["f2p"] == ["suite renders the fixed case"]
+    assert config["p2p"] == ["suite keeps the old case", "suite keeps another case"]
+    assert config["log_parser"] == "mocha-filename"
+    assert config["workdir"] == "/testbed"
+    grade = (task_dir / "tests" / "grade.py").read_text(encoding="utf-8")
+    assert grade == "print('grade')\n"
+    test_patch = (task_dir / "tests" / "test.patch").read_text(encoding="utf-8")
+    assert test_patch == "diff --git a/test/a.js b/test/a.js\n"
+
+
+def test_run_script_embeds_the_instance_test_command(tmp_path: Path) -> None:
+    task_dir = write_task(tmp_path)
+
+    run_script = (task_dir / "tests" / "run_tests.sh").read_text(encoding="utf-8")
+    assert "cd /testbed" in run_script
+    assert (
+        "yarn cross-env NODE_ENV=test mocha test/integration/MenuList.spec.js "
+        "--reporter /testbed/custom-reporter.js --exit" in run_script
+    )
+
+
+def test_verifier_script_prepares_runs_and_grades(tmp_path: Path) -> None:
+    task_dir = write_task(tmp_path)
+
+    test_script = (task_dir / "tests" / "test.sh").read_text(encoding="utf-8")
+    assert "python3 /tests/grade.py prepare" in test_script
+    assert "bash /tests/run_tests.sh" in test_script
+    assert "Container exited with status code" in test_script
+    assert "python3 /tests/grade.py grade" in test_script
+    assert test_script.index("grade.py prepare") < test_script.index("run_tests.sh")
+    assert test_script.index("run_tests.sh") < test_script.index("grade.py grade")
+
+
+def test_pre_artifacts_captures_workdir_diff_from_base_commit(tmp_path: Path) -> None:
+    task_dir = write_task(tmp_path)
+
+    pre_artifacts = (task_dir / "pre_artifacts.sh").read_text(encoding="utf-8")
+    assert "cd /testbed" in pre_artifacts
+    assert "git diff --binary " + "b" * 40 in pre_artifacts
+    assert "/logs/artifacts/model.patch" in pre_artifacts
+
+
+def test_shell_scripts_are_executable(tmp_path: Path) -> None:
+    task_dir = write_task(tmp_path)
+
+    for script in (
+        task_dir / "pre_artifacts.sh",
+        task_dir / "tests" / "test.sh",
+        task_dir / "tests" / "run_tests.sh",
+    ):
+        assert os.access(script, os.X_OK)
