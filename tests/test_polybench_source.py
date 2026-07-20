@@ -214,7 +214,9 @@ def polybench_source(
     selection = BenchmarkSelection(
         name="swe-polybench", source_revision=POLYBENCH_REVISION, tiers=tiers
     )
-    return SwePolybenchTaskSource(selection, load_rows=lambda revision: rows)
+    return SwePolybenchTaskSource(
+        selection, load_rows=lambda revision: rows, resolve_image=pinned_image
+    )
 
 
 def test_factory_returns_polybench_source_for_polybench_selection() -> None:
@@ -288,14 +290,11 @@ def test_resolve_passes_pinned_revision_to_loader() -> None:
     selection = BenchmarkSelection(
         name="swe-polybench", source_revision=POLYBENCH_REVISION, tiers=("high",)
     )
-    SwePolybenchTaskSource(selection, load_rows=load_rows).resolve()
+    SwePolybenchTaskSource(
+        selection, load_rows=load_rows, resolve_image=pinned_image
+    ).resolve()
 
     assert revisions == [POLYBENCH_REVISION]
-
-
-def test_ensure_tasks_dir_is_not_implemented_yet(tmp_path: Path) -> None:
-    with pytest.raises(NotImplementedError):
-        polybench_source(tiered_rows()).ensure_tasks_dir(["b-high"], tmp_path)
 
 
 def polybench_manifest_data() -> dict:
@@ -353,6 +352,7 @@ def test_resolve_suite_cli_writes_identical_polybench_suites_across_runs(
     monkeypatch.setattr(
         swe_polybench_source, "load_dataset_rows", lambda revision: tiered_rows()
     )
+    monkeypatch.setattr(swe_polybench_source, "resolve_eval_image", pinned_image)
     manifest = write_manifest(tmp_path / "manifest.yml", polybench_manifest_data())
     first_out = tmp_path / "first-suite.json"
     second_out = tmp_path / "second-suite.json"

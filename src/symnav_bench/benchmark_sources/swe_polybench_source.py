@@ -5,20 +5,42 @@ import csv
 import sys
 import tempfile
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from symnav_bench.benchmark_sources import BenchmarkTaskSource
+from symnav_bench.benchmark_sources.grading import grade_script_source
+from symnav_bench.benchmark_sources.pier_task_writer import (
+    MaterializedTaskSpec,
+    write_pier_task_dir,
+)
+from symnav_bench.container_registry import resolve_ghcr_image_digest
 from symnav_bench.dataset_fetch import fetch_dataset_files, list_dataset_files
-from symnav_bench.study import BenchmarkSelection, FitTier, fingerprint_mapping
-from symnav_bench.suite import SuiteManifest, TaskManifestEntry, suite_fingerprint
+from symnav_bench.study import BenchmarkSelection, FitTier
+from symnav_bench.suite import (
+    SuiteManifest,
+    TaskManifestEntry,
+    directory_checksum,
+    suite_fingerprint,
+)
 
 
 DATASET_REPO_ID = "AmazonScience/SWE-PolyBench"
 TYPESCRIPT_LANGUAGE = "TypeScript"
 HIGH_TIER_MODIFIED_NODES = 6
 HIGH_TIER_DECLARATION_CHANGES = 4
+POLYBENCH_WORKDIR = "/testbed"
+EVAL_IMAGE_REGISTRY = "ghcr.io"
+EVAL_IMAGE_TAG = "latest"
+
+REPO_LOG_PARSERS = {
+    "microsoft/vscode": "mocha",
+    "angular/angular": "bazel-angular",
+    "mui/material-ui": "mocha-filename",
+    "tailwindlabs/tailwindcss": "jest-tailwind",
+    "coder/code-server": "jest",
+}
 
 
 @dataclass(frozen=True)
@@ -56,29 +78,45 @@ def fit_tier(shape: PolybenchChangeShape) -> FitTier:
 
 
 RowLoader = Callable[[str], Iterable[dict[str, Any]]]
+ImageResolver = Callable[[str], str | None]
 
 
 class SwePolybenchTaskSource(BenchmarkTaskSource):
     def __init__(
-        self, selection: BenchmarkSelection, load_rows: RowLoader | None = None
+        self,
+        selection: BenchmarkSelection,
+        load_rows: RowLoader | None = None,
+        resolve_image: ImageResolver | None = None,
+        suite: SuiteManifest | None = None,
     ) -> None:
         super().__init__(selection)
         self.load_rows = load_rows
+        self.resolve_image = resolve_image
+        self.suite = suite
 
     def resolve(self) -> SuiteManifest:
         if not self.selection.tiers:
             raise ValueError("swe-polybench selection requires fit tiers")
-        load_rows = self.load_rows if self.load_rows is not None else load_dataset_rows
-        instances = parse_polybench_rows(load_rows(self.selection.source_revision))
-        selected = select_instances(instances, self.selection.tiers)
-        tasks = tuple(
-            TaskManifestEntry(
-                slug=instance.instance_id,
-                language="typescript",
-                checksum=instance_checksum(instance),
-                tier=fit_tier(instance.change_shape),
+        selected = select_instances(self.load_instances(), self.selection.tiers)
+        images = self.resolve_images(selected)
+        available = [
+            instance for instance in selected if images[instance.instance_id] is not None
+        ]
+        excluded = len(selected) - len(available)
+        if excluded:
+            print(
+                f"swe-polybench: excluded {excluded} of {len(selected)} selected "
+                "tasks with no published eval image",
+                file=sys.stderr,
             )
-            for instance in selected
+        if not available:
+            raise ValueError(
+                "swe-polybench tier selection matched no tasks with published "
+                "eval images"
+            )
+        tasks = tuple(
+            resolved_task_entry(instance, require_image(images, instance.instance_id))
+            for instance in available
         )
         return SuiteManifest(
             benchmark="swe-polybench",
@@ -90,7 +128,50 @@ class SwePolybenchTaskSource(BenchmarkTaskSource):
         )
 
     def ensure_tasks_dir(self, slugs: Sequence[str], workdir: Path) -> Path:
-        raise NotImplementedError("swe-polybench task materialization lands in a later phase")
+        if self.suite is None:
+            raise ValueError(
+                "swe-polybench task materialization requires the declared suite "
+                "for checksum verification"
+            )
+        declared = {task.slug: task for task in self.suite.tasks}
+        for slug in slugs:
+            if slug not in declared:
+                raise ValueError(f"task {slug!r} is not part of the declared suite")
+        instances = {
+            instance.instance_id: instance for instance in self.load_instances()
+        }
+        for slug in slugs:
+            instance = instances.get(slug)
+            if instance is None:
+                raise ValueError(
+                    f"task {slug!r} is missing from the pinned dataset revision"
+                )
+            image = self.image_resolver()(slug)
+            if image is None:
+                raise ValueError(f"eval image for task {slug!r} is no longer published")
+            task_dir = materialize_instance(instance, image, workdir / slug)
+            if directory_checksum(task_dir) != declared[slug].checksum:
+                raise ValueError(
+                    f"materialized task {slug!r} does not match the declared suite "
+                    "(dataset content or eval image changed since declaration)"
+                )
+        return workdir
+
+    def load_instances(self) -> tuple[PolybenchInstance, ...]:
+        load_rows = self.load_rows if self.load_rows is not None else load_dataset_rows
+        return parse_polybench_rows(load_rows(self.selection.source_revision))
+
+    def image_resolver(self) -> ImageResolver:
+        return self.resolve_image if self.resolve_image is not None else resolve_eval_image
+
+    def resolve_images(
+        self, instances: Sequence[PolybenchInstance]
+    ) -> dict[str, str | None]:
+        resolve_image = self.image_resolver()
+        return {
+            instance.instance_id: resolve_image(instance.instance_id)
+            for instance in instances
+        }
 
 
 def select_instances(
@@ -108,8 +189,67 @@ def select_instances(
     return tuple(selected)
 
 
-def instance_checksum(instance: PolybenchInstance) -> str:
-    return fingerprint_mapping(asdict(instance))
+def require_image(images: dict[str, str | None], instance_id: str) -> str:
+    image = images[instance_id]
+    if image is None:
+        raise ValueError(f"eval image for task {instance_id!r} is no longer published")
+    return image
+
+
+def eval_image_repository(instance_id: str) -> str:
+    return "timesler/swe-polybench.eval.x86_64." + instance_id.lower()
+
+
+def resolve_eval_image(instance_id: str) -> str | None:
+    repository = eval_image_repository(instance_id)
+    digest = resolve_ghcr_image_digest(repository, EVAL_IMAGE_TAG)
+    if digest is None:
+        return None
+    return f"{EVAL_IMAGE_REGISTRY}/{repository}@{digest}"
+
+
+def log_parser_for(instance: PolybenchInstance) -> str:
+    parser = REPO_LOG_PARSERS.get(instance.repo)
+    if parser is None:
+        raise ValueError(
+            f"swe-polybench instance {instance.instance_id!r}: no log parser "
+            f"registered for repo {instance.repo!r}"
+        )
+    return parser
+
+
+def materialize_instance(
+    instance: PolybenchInstance, docker_image: str, task_dir: Path
+) -> Path:
+    spec = MaterializedTaskSpec(
+        benchmark="swe-polybench",
+        slug=instance.instance_id,
+        instruction=instance.problem_statement,
+        docker_image=docker_image,
+        workdir=POLYBENCH_WORKDIR,
+        base_commit=instance.base_commit,
+        test_patch=instance.test_patch,
+        f2p=instance.f2p,
+        p2p=instance.p2p,
+        test_command=instance.test_command,
+        log_parser=log_parser_for(instance),
+        grade_script=grade_script_source(),
+    )
+    return write_pier_task_dir(spec, task_dir)
+
+
+def resolved_task_entry(instance: PolybenchInstance, image: str) -> TaskManifestEntry:
+    with tempfile.TemporaryDirectory(prefix="swe-polybench-resolve-") as scratch:
+        task_dir = materialize_instance(
+            instance, image, Path(scratch) / instance.instance_id
+        )
+        checksum = directory_checksum(task_dir)
+    return TaskManifestEntry(
+        slug=instance.instance_id,
+        language="typescript",
+        checksum=checksum,
+        tier=fit_tier(instance.change_shape),
+    )
 
 
 def load_dataset_rows(revision: str) -> Iterator[dict[str, Any]]:
