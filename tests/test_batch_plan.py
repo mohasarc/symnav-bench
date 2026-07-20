@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
+import pytest
 import yaml
 
 from symnav_bench.batch_plan import plan_balanced_batches, plan_trial_slots
@@ -116,6 +118,24 @@ def test_plan_study_json_emits_suite_slots_batches_and_zero_coverage(
     assert len(plan["slots"]) == 16
     assert len(plan["batches"]) == 1
     assert plan["coverage"] == {"completed": 0, "fraction": 0.0, "total": 16}
+
+
+def test_rejects_suite_from_different_benchmark() -> None:
+    study = make_study(configuration_count=1, repetitions=1)
+    suite = make_suite(1)
+    mismatched = replace(suite, benchmark="swe-polybench")
+
+    with pytest.raises(ValueError, match="benchmark"):
+        plan_trial_slots(study, mismatched)
+
+
+def test_rejects_suite_with_different_source_revision() -> None:
+    study = make_study(configuration_count=1, repetitions=1)
+    suite = make_suite(1)
+    mismatched = replace(suite, source_revision="f" * 40)
+
+    with pytest.raises(ValueError, match="revision"):
+        plan_trial_slots(study, mismatched)
 
 
 def make_study(configuration_count: int, repetitions: int) -> StudyManifest:

@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from symnav_bench.suite import (
+    TaskManifestEntry,
     build_suite_manifest,
     parse_suite_manifest,
     serialize_suite_manifest,
     suite_fingerprint,
+    suite_mapping,
 )
 
 COMMITTED_V1_SUITE = Path(__file__).parent / "fixtures" / "studies" / "deepswe-v1-suite.json"
@@ -45,6 +49,138 @@ def test_committed_deepswe_suite_fingerprint_reproduces() -> None:
     recomputed = suite_fingerprint(suite.benchmark, suite.source_revision, suite.tasks)
 
     assert recomputed == COMMITTED_V1_SUITE_FINGERPRINT
+
+
+def v2_polybench_suite_data() -> dict:
+    return {
+        "benchmark": "swe-polybench",
+        "source_revision": "b" * 40,
+        "fingerprint": "f" * 64,
+        "tasks": [
+            {
+                "slug": "amazon__ion-js-717",
+                "language": "typescript",
+                "checksum": "1" * 64,
+                "tier": "mid",
+            },
+            {
+                "slug": "microsoft__vscode-106767",
+                "language": "typescript",
+                "checksum": "2" * 64,
+                "tier": "high",
+            },
+        ],
+    }
+
+
+def v2_multi_swe_suite_data() -> dict:
+    return {
+        "benchmark": "multi-swe-bench",
+        "source_revision": "c" * 40,
+        "fingerprint": "e" * 64,
+        "tasks": [
+            {
+                "slug": "vuejs__core-11739",
+                "language": "typescript",
+                "checksum": "3" * 64,
+            },
+        ],
+    }
+
+
+def test_v2_polybench_suite_parses_with_per_task_tiers() -> None:
+    suite = parse_suite_manifest(v2_polybench_suite_data())
+
+    assert suite.benchmark == "swe-polybench"
+    assert suite.source_revision == "b" * 40
+    assert suite.fingerprint == "f" * 64
+    assert [task.slug for task in suite.tasks] == [
+        "amazon__ion-js-717",
+        "microsoft__vscode-106767",
+    ]
+    assert [task.tier for task in suite.tasks] == ["mid", "high"]
+
+
+def test_v2_multi_swe_suite_parses_without_tiers() -> None:
+    suite = parse_suite_manifest(v2_multi_swe_suite_data())
+
+    assert suite.benchmark == "multi-swe-bench"
+    assert suite.source_revision == "c" * 40
+    assert [task.slug for task in suite.tasks] == ["vuejs__core-11739"]
+    assert all(task.tier is None for task in suite.tasks)
+
+
+def test_v2_suite_round_trips_through_mapping() -> None:
+    suite = parse_suite_manifest(v2_polybench_suite_data())
+
+    mapping = suite_mapping(suite)
+
+    assert "deep_swe_sha" not in mapping
+    assert mapping["benchmark"] == "swe-polybench"
+    assert mapping["source_revision"] == "b" * 40
+    assert [task["tier"] for task in mapping["tasks"]] == ["mid", "high"]
+    assert parse_suite_manifest(mapping) == suite
+
+
+def test_v2_multi_swe_mapping_omits_tier_key() -> None:
+    suite = parse_suite_manifest(v2_multi_swe_suite_data())
+
+    mapping = suite_mapping(suite)
+
+    assert all("tier" not in task for task in mapping["tasks"])
+    assert parse_suite_manifest(mapping) == suite
+
+
+def test_v2_fingerprint_covers_benchmark_revision_and_tier() -> None:
+    high_task = (TaskManifestEntry("task", "typescript", "1" * 64, "high"),)
+    mid_task = (TaskManifestEntry("task", "typescript", "1" * 64, "mid"),)
+    untiered_task = (TaskManifestEntry("task", "typescript", "1" * 64),)
+
+    polybench = suite_fingerprint("swe-polybench", "b" * 40, high_task)
+
+    assert polybench != suite_fingerprint("swe-polybench", "b" * 40, mid_task)
+    assert polybench != suite_fingerprint("swe-polybench", "c" * 40, high_task)
+    assert suite_fingerprint("multi-swe-bench", "b" * 40, untiered_task) != suite_fingerprint(
+        "swe-polybench", "b" * 40, untiered_task
+    )
+
+
+@pytest.mark.parametrize(
+    ("description", "mutate"),
+    [
+        ("unknown benchmark name", lambda data: data.update(benchmark="swe-bench")),
+        (
+            "invalid tier value",
+            lambda data: data["tasks"][0].update(tier="extreme"),
+        ),
+        (
+            "missing source revision",
+            lambda data: data.pop("source_revision"),
+        ),
+    ],
+)
+def test_rejects_invalid_v2_suite(description: str, mutate) -> None:
+    data = v2_polybench_suite_data()
+    mutate(data)
+
+    with pytest.raises(ValueError):
+        parse_suite_manifest(data)
+
+
+def test_rejects_tier_on_multi_swe_suite() -> None:
+    data = v2_multi_swe_suite_data()
+    data["tasks"][0]["tier"] = "high"
+
+    with pytest.raises(ValueError, match="tier"):
+        parse_suite_manifest(data)
+
+
+def test_rejects_tier_on_legacy_deepswe_suite() -> None:
+    data = json.loads(committed_v1_suite_text())
+    data["tasks"][0]["tier"] = "high"
+
+    with pytest.raises(ValueError, match="tier"):
+        parse_suite_manifest(data)
 
 
 def test_builds_sorted_typescript_suite_and_resolves_revision_once(tmp_path: Path) -> None:
