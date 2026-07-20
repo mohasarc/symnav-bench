@@ -97,6 +97,111 @@ def test_rejects_protocol_edits_under_existing_study_id(
         StudyManifest.load(write_study(tmp_path / "study.yaml", data))
 
 
+def test_v2_deepswe_manifest_loads_and_round_trips_fingerprint(tmp_path: Path) -> None:
+    data = study_data_v2({"name": "deepswe", "source": {"revision": "a" * 40}})
+
+    study = StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+    assert study.schema_version == 2
+    assert study.protocol.benchmark.name == "deepswe"
+    assert study.protocol.benchmark.source_revision == "a" * 40
+    assert study.protocol.benchmark.tiers is None
+    assert study.protocol_fingerprint() == data["protocol_fingerprint"]
+
+
+def test_v2_swe_polybench_manifest_loads_tiers_in_declaration_order(tmp_path: Path) -> None:
+    data = study_data_v2(
+        {"name": "swe-polybench", "source": {"revision": "a" * 40}, "tiers": ["high", "mid"]}
+    )
+
+    study = StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+    assert study.protocol.benchmark.name == "swe-polybench"
+    assert study.protocol.benchmark.tiers == ("high", "mid")
+    assert study.protocol_fingerprint() == data["protocol_fingerprint"]
+
+
+def test_v2_multi_swe_bench_manifest_loads_without_tiers(tmp_path: Path) -> None:
+    data = study_data_v2({"name": "multi-swe-bench", "source": {"revision": "a" * 40}})
+
+    study = StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+    assert study.protocol.benchmark.name == "multi-swe-bench"
+    assert study.protocol.benchmark.tiers is None
+    assert study.protocol_fingerprint() == data["protocol_fingerprint"]
+
+
+@pytest.mark.parametrize(
+    ("benchmark", "match"),
+    [
+        ({"name": "swe-bench", "source": {"revision": "a" * 40}}, "unknown benchmark"),
+        (
+            {"name": "swe-polybench", "source": {"revision": "a" * 40}, "tiers": []},
+            "tiers",
+        ),
+        (
+            {"name": "swe-polybench", "source": {"revision": "a" * 40}, "tiers": ["high", "epic"]},
+            "fit tier",
+        ),
+        (
+            {"name": "swe-polybench", "source": {"revision": "a" * 40}, "tiers": ["high", "high"]},
+            "unique",
+        ),
+        (
+            {"name": "deepswe", "source": {"revision": "a" * 40}, "tiers": ["high"]},
+            "tiers",
+        ),
+        (
+            {"name": "multi-swe-bench", "source": {"revision": "a" * 40}, "tiers": ["high"]},
+            "tiers",
+        ),
+        ({"name": "deepswe", "source": {"revision": "main"}}, "immutable git sha"),
+    ],
+)
+def test_rejects_invalid_v2_benchmark_blocks(
+    tmp_path: Path, benchmark: dict, match: str
+) -> None:
+    data = study_data_v2(benchmark)
+
+    with pytest.raises(ValueError, match=match):
+        StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+
+def test_rejects_v2_manifest_with_top_level_deep_swe_sha(tmp_path: Path) -> None:
+    data = study_data_v2({"name": "deepswe", "source": {"revision": "a" * 40}})
+    data["protocol"]["deep_swe_sha"] = "a" * 40
+    data["protocol_fingerprint"] = fingerprint(data["protocol"])
+
+    with pytest.raises(ValueError, match="deep_swe_sha"):
+        StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+
+def test_rejects_v1_manifest_with_benchmark_block(tmp_path: Path) -> None:
+    data = study_data()
+    data["protocol"]["benchmark"] = {"name": "deepswe", "source": {"revision": "a" * 40}}
+    data["protocol_fingerprint"] = fingerprint(data["protocol"])
+
+    with pytest.raises(ValueError, match="benchmark"):
+        StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+
+def test_rejects_unsupported_schema_version(tmp_path: Path) -> None:
+    data = study_data()
+    data["schema_version"] = 3
+
+    with pytest.raises(ValueError, match="schema version"):
+        StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+
+def study_data_v2(benchmark: dict) -> dict:
+    data = study_data()
+    data["schema_version"] = 2
+    del data["protocol"]["deep_swe_sha"]
+    data["protocol"]["benchmark"] = benchmark
+    data["protocol_fingerprint"] = fingerprint(data["protocol"])
+    return data
+
+
 def study_data() -> dict:
     protocol = {
         "deep_swe_sha": "a" * 40,
