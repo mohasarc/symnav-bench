@@ -77,7 +77,7 @@ class SymnavRevision:
 
 @dataclass(frozen=True)
 class StudyProtocol:
-    deep_swe_sha: str
+    benchmark: BenchmarkSelection
     symnav: SymnavRevision
     repetitions: int
     wall_clock_seconds: int
@@ -98,6 +98,7 @@ class StudyManifest:
     def load(cls, path: Path) -> StudyManifest:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         manifest_data = require_mapping(raw, "study")
+        schema_version = require_integer(manifest_data.get("schema_version"), "schema_version")
         protocol_data = require_mapping(manifest_data.get("protocol"), "protocol")
         expected_fingerprint = require_string(
             manifest_data.get("protocol_fingerprint"), "protocol_fingerprint"
@@ -108,7 +109,7 @@ class StudyManifest:
                 "protocol fingerprint does not match immutable study protocol: "
                 f"expected {expected_fingerprint}, got {actual_fingerprint}"
             )
-        protocol = parse_protocol(protocol_data)
+        protocol = parse_protocol(protocol_data, schema_version)
         configuration_values = require_list(
             manifest_data.get("configurations"), "configurations"
         )
@@ -120,22 +121,22 @@ class StudyManifest:
         if len(configuration_ids) != len(set(configuration_ids)):
             raise ValueError("configuration ids must be unique")
         return cls(
-            schema_version=require_integer(manifest_data.get("schema_version"), "schema_version"),
+            schema_version=schema_version,
             id=require_string(manifest_data.get("id"), "id"),
             protocol=protocol,
             configurations=configurations,
         )
 
     def protocol_fingerprint(self) -> str:
-        return fingerprint_mapping(protocol_mapping(self.protocol))
+        return fingerprint_mapping(protocol_mapping(self.protocol, self.schema_version))
 
 
-def parse_protocol(data: dict[str, Any]) -> StudyProtocol:
+def parse_protocol(data: dict[str, Any], schema_version: int) -> StudyProtocol:
+    benchmark = parse_source_pin(data, schema_version)
     symnav_data = require_mapping(data.get("symnav"), "protocol.symnav")
     kind = require_string(symnav_data.get("kind"), "protocol.symnav.kind")
     if kind not in ("main", "pull_request"):
         raise ValueError(f"unknown symnav revision kind {kind!r}")
-    deep_swe_sha = require_git_sha(data.get("deep_swe_sha"), "protocol.deep_swe_sha")
     symnav_sha = require_git_sha(symnav_data.get("sha"), "protocol.symnav.sha")
     base_sha = require_git_sha(symnav_data.get("base_sha"), "protocol.symnav.base_sha")
     condition_values = require_list(data.get("conditions"), "protocol.conditions")
@@ -162,7 +163,7 @@ def parse_protocol(data: dict[str, Any]) -> StudyProtocol:
     if kind == "main" and pull_request is not None:
         raise ValueError("main symnav revision cannot carry pull_request")
     return StudyProtocol(
-        deep_swe_sha=deep_swe_sha,
+        benchmark=benchmark,
         symnav=SymnavRevision(
             sha=symnav_sha,
             kind=cast(SymnavRevisionKind, kind),
@@ -187,6 +188,53 @@ def parse_protocol(data: dict[str, Any]) -> StudyProtocol:
     )
 
 
+def parse_source_pin(data: dict[str, Any], schema_version: int) -> BenchmarkSelection:
+    if schema_version == 1:
+        if "benchmark" in data:
+            raise ValueError("schema version 1 does not accept protocol.benchmark")
+        deep_swe_sha = require_git_sha(data.get("deep_swe_sha"), "protocol.deep_swe_sha")
+        return BenchmarkSelection(name="deepswe", source_revision=deep_swe_sha, tiers=None)
+    if schema_version == 2:
+        if "deep_swe_sha" in data:
+            raise ValueError("schema version 2 does not accept protocol.deep_swe_sha")
+        return parse_benchmark(require_mapping(data.get("benchmark"), "protocol.benchmark"))
+    raise ValueError(f"unsupported study schema version {schema_version}")
+
+
+def parse_benchmark(data: dict[str, Any]) -> BenchmarkSelection:
+    name = require_string(data.get("name"), "protocol.benchmark.name")
+    if name not in BENCHMARK_NAMES:
+        raise ValueError(f"unknown benchmark name {name!r}")
+    source = require_mapping(data.get("source"), "protocol.benchmark.source")
+    revision = require_git_sha(source.get("revision"), "protocol.benchmark.source.revision")
+    if name != "swe-polybench":
+        if data.get("tiers") is not None:
+            raise ValueError("protocol.benchmark.tiers is only valid for swe-polybench")
+        return BenchmarkSelection(
+            name=cast(BenchmarkName, name), source_revision=revision, tiers=None
+        )
+    return BenchmarkSelection(
+        name="swe-polybench",
+        source_revision=revision,
+        tiers=parse_tiers(data.get("tiers")),
+    )
+
+
+def parse_tiers(value: object) -> tuple[FitTier, ...]:
+    tier_values = require_list(value, "protocol.benchmark.tiers")
+    if not tier_values:
+        raise ValueError("protocol.benchmark.tiers must not be empty")
+    tiers: list[FitTier] = []
+    for tier_value in tier_values:
+        tier = require_string(tier_value, "protocol.benchmark.tiers entry")
+        if tier not in FIT_TIERS:
+            raise ValueError(f"unknown fit tier {tier!r}")
+        tiers.append(cast(FitTier, tier))
+    if len(tiers) != len(set(tiers)):
+        raise ValueError("protocol.benchmark.tiers must be unique")
+    return tuple(tiers)
+
+
 def parse_configuration(data: dict[str, Any]) -> AgentConfiguration:
     agent = require_string(data.get("agent"), "configuration.agent")
     model = require_string(data.get("model"), "configuration.model")
@@ -198,9 +246,15 @@ def parse_configuration(data: dict[str, Any]) -> AgentConfiguration:
     )
 
 
-def protocol_mapping(protocol: StudyProtocol) -> dict[str, Any]:
+def protocol_mapping(protocol: StudyProtocol, schema_version: int) -> dict[str, Any]:
+    if schema_version == 1:
+        if protocol.benchmark.name != "deepswe":
+            raise ValueError("schema version 1 studies are always deepswe")
+        source_pin: dict[str, Any] = {"deep_swe_sha": protocol.benchmark.source_revision}
+    else:
+        source_pin = {"benchmark": benchmark_mapping(protocol.benchmark)}
     return {
-        "deep_swe_sha": protocol.deep_swe_sha,
+        **source_pin,
         "symnav": {
             "sha": protocol.symnav.sha,
             "kind": protocol.symnav.kind,
@@ -216,6 +270,16 @@ def protocol_mapping(protocol: StudyProtocol) -> dict[str, Any]:
         "scoring_policy": protocol.scoring_policy,
         "practical_uplift_points": protocol.practical_uplift_points,
     }
+
+
+def benchmark_mapping(benchmark: BenchmarkSelection) -> dict[str, Any]:
+    mapping: dict[str, Any] = {
+        "name": benchmark.name,
+        "source": {"revision": benchmark.source_revision},
+    }
+    if benchmark.tiers is not None:
+        mapping["tiers"] = list(benchmark.tiers)
+    return mapping
 
 
 def fingerprint_mapping(value: dict[str, Any]) -> str:

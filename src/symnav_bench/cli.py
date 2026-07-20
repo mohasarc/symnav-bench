@@ -165,7 +165,7 @@ def report_study_command(args: argparse.Namespace) -> int:
 
 def plan_study_command(args: argparse.Namespace) -> int:
     study = StudyManifest.load(args.study)
-    suite = build_suite_manifest(args.tasks_dir, study.protocol.deep_swe_sha)
+    suite = build_suite_manifest(args.tasks_dir, study.protocol.benchmark.source_revision)
     if args.json:
         write_study_plan(study, sys.stdout, suite=suite)
         return 0
@@ -314,7 +314,7 @@ def study_plan_mapping(
     return {
         "study_id": study.id,
         "protocol_fingerprint": study.protocol_fingerprint(),
-        "protocol": protocol_mapping(study.protocol),
+        "protocol": protocol_mapping(study.protocol, study.schema_version),
         "suite": {
             "deep_swe_sha": suite.deep_swe_sha,
             "fingerprint": suite.fingerprint,

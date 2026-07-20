@@ -30,7 +30,7 @@ class BatchPlan:
 
 
 def plan_trial_slots(study: StudyManifest, suite: SuiteManifest) -> list[TrialSlot]:
-    if study.protocol.deep_swe_sha != suite.deep_swe_sha:
+    if study.protocol.benchmark.source_revision != suite.deep_swe_sha:
         raise ValueError("suite DeepSWE sha does not match study protocol")
     return [
         TrialSlot(

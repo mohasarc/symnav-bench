@@ -58,7 +58,7 @@ class StudyRunContext:
             tasks=tasks,
             integration=SymnavIntegrationCatalog.load(Path(symnav_checkout)).bundle("full"),
             wall_clock_seconds=study.protocol.wall_clock_seconds,
-            deep_swe_sha=study.protocol.deep_swe_sha,
+            deep_swe_sha=study.protocol.benchmark.source_revision,
         )
 
 

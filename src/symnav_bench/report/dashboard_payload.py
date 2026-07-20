@@ -59,7 +59,7 @@ def build_dashboard_payload(
             "id": dataset.manifest.id,
             "protocol_fingerprint": dataset.manifest.protocol_fingerprint(),
             "suite_fingerprint": dataset.suite.fingerprint,
-            "deep_swe_sha": dataset.manifest.protocol.deep_swe_sha,
+            "deep_swe_sha": dataset.manifest.protocol.benchmark.source_revision,
             "symnav_revision": asdict(dataset.manifest.protocol.symnav),
             "repetitions": dataset.manifest.protocol.repetitions,
             "conditions": list(dataset.manifest.protocol.conditions),

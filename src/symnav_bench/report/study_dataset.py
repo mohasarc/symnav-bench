@@ -325,7 +325,7 @@ def _compatibility_mismatch(
     if raw.get("protocol_fingerprint") != manifest.protocol_fingerprint():
         return "protocol fingerprint"
     if (
-        harness.get("deep_swe_sha") != manifest.protocol.deep_swe_sha
+        harness.get("deep_swe_sha") != manifest.protocol.benchmark.source_revision
         or (
             planned.condition != "stock"
             and harness.get("symnav_sha") != manifest.protocol.symnav.sha

@@ -10,6 +10,7 @@ from symnav_bench.report.study_dataset import Coverage
 from symnav_bench.report.study_dataset import StudyDataset
 from symnav_bench.report.study_dataset import TaskMetrics
 from symnav_bench.study import AgentConfiguration
+from symnav_bench.study import BenchmarkSelection
 from symnav_bench.study import StudyManifest
 from symnav_bench.study import StudyProtocol
 from symnav_bench.study import SymnavRevision
@@ -78,7 +79,7 @@ def test_incomplete_task_values_stay_null_and_coverage_stays_visible() -> None:
 def study_dataset() -> StudyDataset:
     revision = SymnavRevision("b" * 40, "main", 1, "main", "b" * 40, None)
     protocol = StudyProtocol(
-        "a" * 40,
+        BenchmarkSelection("deepswe", "a" * 40, None),
         revision,
         4,
         9_000,

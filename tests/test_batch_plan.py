@@ -12,6 +12,7 @@ from symnav_bench.cli import main
 from symnav_bench.run_spec import AgentSpec
 from symnav_bench.study import (
     AgentConfiguration,
+    BenchmarkSelection,
     StudyManifest,
     StudyProtocol,
     SymnavRevision,
@@ -130,7 +131,7 @@ def make_study(configuration_count: int, repetitions: int) -> StudyManifest:
         schema_version=1,
         id="study",
         protocol=StudyProtocol(
-            deep_swe_sha="a" * 40,
+            benchmark=BenchmarkSelection("deepswe", "a" * 40, None),
             symnav=SymnavRevision(
                 sha="b" * 40,
                 kind="main",
