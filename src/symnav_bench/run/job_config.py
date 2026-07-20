@@ -6,7 +6,7 @@ from pathlib import Path
 
 from symnav_bench.agent_integrations import AgentIntegrationBundle
 from symnav_bench.run_spec import AgentSpec, Condition
-from symnav_bench.study import AgentConfiguration
+from symnav_bench.study import AgentConfiguration, BenchmarkName, FitTier
 from symnav_bench.suite import TaskManifestEntry
 
 
@@ -26,9 +26,21 @@ class HarnessIdentity:
     prompt_rule_hash: str
     requested_model: str
     requested_effort: str
+    benchmark: BenchmarkName = "deepswe"
+    benchmark_source_revision: str = ""
+    task_fit_tier: FitTier | None = None
+
+    def __post_init__(self) -> None:
+        if not self.benchmark_source_revision:
+            object.__setattr__(self, "benchmark_source_revision", self.deep_swe_sha)
 
     def to_json(self) -> dict[str, str | None]:
-        return asdict(self)
+        value = asdict(self)
+        if self.benchmark == "deepswe":
+            del value["benchmark"]
+            del value["benchmark_source_revision"]
+            del value["task_fit_tier"]
+        return value
 
 
 def build_job_yaml(

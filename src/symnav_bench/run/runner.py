@@ -192,6 +192,7 @@ class CellRunner:
             return self.harness
         context = self.study_context
         treatment = identity.condition_label != "stock"
+        task = context.tasks[identity.task] if context else None
         return HarnessIdentity(
             image_reference=self.harness.image_version,
             image_digest=os.environ.get("SYMNAV_BENCH_IMAGE_DIGEST", "unknown"),
@@ -203,10 +204,13 @@ class CellRunner:
             agent_version=context.configuration.agent_version if context else os.environ.get(f"{identity.spec.agent.upper()}_VERSION", "unknown"),
             bundle_id=context.integration.id if context and treatment else None,
             bundle_hash=context.integration.content_hash if context and treatment else None,
-            task_checksum=context.tasks[identity.task].checksum if context else "unknown",
+            task_checksum=task.checksum if task else "unknown",
             prompt_rule_hash="unknown",
             requested_model=identity.spec.model,
             requested_effort=identity.spec.effort,
+            benchmark=context.benchmark.name if context else "deepswe",
+            benchmark_source_revision=context.benchmark.source_revision if context else "",
+            task_fit_tier=task.tier if task else None,
         )
 
 

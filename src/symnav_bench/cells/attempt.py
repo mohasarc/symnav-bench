@@ -96,7 +96,9 @@ class AttemptRecord:
         )
 
     def to_json(self) -> dict[str, Any]:
-        return asdict(self)
+        value = asdict(self)
+        value["harness"] = self.harness.to_json()
+        return value
 
 
 def _load_adoption(value: Any) -> AdoptionSummary:
