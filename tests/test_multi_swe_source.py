@@ -121,6 +121,12 @@ def test_problem_statement_is_title_when_body_is_blank() -> None:
     )
 
 
+def test_parse_rows_tolerates_empty_f2p_tests() -> None:
+    instance = parse_multi_swe_rows([dataset_row(f2p_tests={})])[0]
+
+    assert instance.f2p == ()
+
+
 @pytest.mark.parametrize(
     ("column", "value"),
     [
@@ -133,7 +139,6 @@ def test_problem_statement_is_title_when_body_is_blank() -> None:
         ("base", {"label": "x", "ref": "master"}),
         ("base", "not a mapping"),
         ("test_patch", ""),
-        ("f2p_tests", {}),
         ("f2p_tests", ["not", "a", "mapping"]),
         ("p2p_tests", ["not", "a", "mapping"]),
     ],
@@ -309,6 +314,25 @@ def test_resolve_excludes_instances_without_eval_images(
     stderr = capsys.readouterr().err
     assert "excluded 2 of 4" in stderr
     assert "mui__material-ui-39962" in stderr
+    assert "vuejs__core-11899" in stderr
+
+
+def test_resolve_excludes_instances_without_f2p_tests(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rows = three_repo_rows()
+    rows[2]["f2p_tests"] = {}
+
+    suite = multi_swe_source(rows).resolve()
+
+    assert [task.slug for task in suite.tasks] == [
+        "darkreader__darkreader-6747",
+        "darkreader__darkreader-7241",
+        "mui__material-ui-39962",
+    ]
+    stderr = capsys.readouterr().err
+    assert "excluded 1 of 4" in stderr
+    assert "no fail-to-pass tests" in stderr
     assert "vuejs__core-11899" in stderr
 
 
