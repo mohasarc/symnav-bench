@@ -123,9 +123,19 @@ class MultiSweBenchTaskSource(BenchmarkTaskSource):
         self.suite = suite
 
     def resolve(self) -> SuiteManifest:
-        instances = sorted(
+        loaded = sorted(
             self.load_instances(), key=lambda instance: instance.instance_id
         )
+        instances = [instance for instance in loaded if instance.f2p]
+        ungradeable = [instance.instance_id for instance in loaded if not instance.f2p]
+        if ungradeable:
+            print(
+                f"multi-swe-bench: excluded {len(ungradeable)} of {len(loaded)} "
+                "tasks with no fail-to-pass tests:",
+                file=sys.stderr,
+            )
+            for instance_id in ungradeable:
+                print(f"  {instance_id}", file=sys.stderr)
         images = self.resolve_images(instances)
         available = [
             instance for instance in instances if images[instance.instance_id] is not None
@@ -288,8 +298,8 @@ def parse_multi_swe_row(row: dict[str, Any]) -> MultiSweInstance:
         base_commit=row_base_commit(row, instance_id),
         problem_statement=problem_statement(title, body),
         test_patch=row_string(row, "test_patch", instance_id),
-        f2p=row_test_names(row, "f2p_tests", instance_id, allow_empty=False),
-        p2p=row_test_names(row, "p2p_tests", instance_id, allow_empty=True),
+        f2p=row_test_names(row, "f2p_tests", instance_id),
+        p2p=row_test_names(row, "p2p_tests", instance_id),
     )
 
 
@@ -310,13 +320,11 @@ def row_base_commit(row: dict[str, Any], instance_id: str) -> str:
 
 
 def row_test_names(
-    row: dict[str, Any], column: str, instance_id: str, *, allow_empty: bool
+    row: dict[str, Any], column: str, instance_id: str
 ) -> tuple[str, ...]:
     value = row.get(column)
     if not isinstance(value, dict):
         raise row_error(column, instance_id, "a mapping of test names")
-    if not value and not allow_empty:
-        raise row_error(column, instance_id, "a non-empty mapping of test names")
     return tuple(value)
 
 
