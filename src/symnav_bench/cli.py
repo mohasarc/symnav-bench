@@ -25,6 +25,7 @@ from symnav_bench.suite import (
     SuiteManifest,
     build_suite_manifest,
     parse_suite_manifest,
+    serialize_suite_manifest,
     suite_mapping,
 )
 from symnav_bench.tasks import list_tasks
@@ -42,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
             return report_command(args)
         if args.command == "plan-study":
             return plan_study_command(args)
+        if args.command == "resolve-suite":
+            return resolve_suite_command(args)
         if args.command == "batch-matrix":
             return batch_matrix_command(args)
         if args.command == "merge-results":
@@ -91,6 +94,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan_study_parser.add_argument("--study", type=Path, required=True)
     plan_study_parser.add_argument("--tasks-dir", type=Path, required=True)
     plan_study_parser.add_argument("--json", action="store_true")
+    resolve_suite_parser = subcommands.add_parser("resolve-suite")
+    resolve_suite_parser.add_argument("--study", type=Path, required=True)
+    resolve_suite_parser.add_argument("--out", type=Path, required=True)
     batch_matrix_parser = subcommands.add_parser("batch-matrix")
     batch_matrix_parser.add_argument("--study", type=Path, required=True)
     batch_matrix_parser.add_argument("--suite", type=Path, required=True)
@@ -185,6 +191,15 @@ def plan_study_command(args: argparse.Namespace) -> int:
         f"{study.id}: {len(suite.tasks)} tasks, "
         f"{len(study.configurations)} configurations, {len(slots)} slots"
     )
+    return 0
+
+
+def resolve_suite_command(args: argparse.Namespace) -> int:
+    study = StudyManifest.load(args.study)
+    suite = benchmark_task_source(study.protocol.benchmark).resolve()
+    args.out.write_text(serialize_suite_manifest(suite), encoding="utf-8")
+    slots = plan_trial_slots(study, suite)
+    print(f"{study.id}: {len(suite.tasks)} tasks, {len(slots)} slots")
     return 0
 
 

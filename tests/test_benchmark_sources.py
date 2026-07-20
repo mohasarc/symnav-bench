@@ -23,7 +23,6 @@ def test_factory_returns_deepswe_source_for_deepswe_selection() -> None:
 @pytest.mark.parametrize(
     "selection",
     [
-        BenchmarkSelection(name="swe-polybench", source_revision="b" * 40, tiers=("high",)),
         BenchmarkSelection(name="multi-swe-bench", source_revision="b" * 40, tiers=None),
     ],
 )

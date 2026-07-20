@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable
-from dataclasses import dataclass
+import csv
+import sys
+import tempfile
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
-from symnav_bench.study import FitTier
+from symnav_bench.benchmark_sources import BenchmarkTaskSource
+from symnav_bench.dataset_fetch import fetch_dataset_files, list_dataset_files
+from symnav_bench.study import BenchmarkSelection, FitTier, fingerprint_mapping
+from symnav_bench.suite import SuiteManifest, TaskManifestEntry, suite_fingerprint
 
 
+DATASET_REPO_ID = "AmazonScience/SWE-PolyBench"
 TYPESCRIPT_LANGUAGE = "TypeScript"
 HIGH_TIER_MODIFIED_NODES = 6
 HIGH_TIER_DECLARATION_CHANGES = 4
@@ -45,6 +53,83 @@ def fit_tier(shape: PolybenchChangeShape) -> FitTier:
     if shape.num_func_changes + shape.num_class_changes >= HIGH_TIER_DECLARATION_CHANGES:
         return "high"
     return "mid"
+
+
+RowLoader = Callable[[str], Iterable[dict[str, Any]]]
+
+
+class SwePolybenchTaskSource(BenchmarkTaskSource):
+    def __init__(
+        self, selection: BenchmarkSelection, load_rows: RowLoader | None = None
+    ) -> None:
+        super().__init__(selection)
+        self.load_rows = load_rows
+
+    def resolve(self) -> SuiteManifest:
+        if not self.selection.tiers:
+            raise ValueError("swe-polybench selection requires fit tiers")
+        load_rows = self.load_rows if self.load_rows is not None else load_dataset_rows
+        instances = parse_polybench_rows(load_rows(self.selection.source_revision))
+        selected = select_instances(instances, self.selection.tiers)
+        tasks = tuple(
+            TaskManifestEntry(
+                slug=instance.instance_id,
+                language="typescript",
+                checksum=instance_checksum(instance),
+                tier=fit_tier(instance.change_shape),
+            )
+            for instance in selected
+        )
+        return SuiteManifest(
+            benchmark="swe-polybench",
+            source_revision=self.selection.source_revision,
+            tasks=tasks,
+            fingerprint=suite_fingerprint(
+                "swe-polybench", self.selection.source_revision, tasks
+            ),
+        )
+
+    def ensure_tasks_dir(self, slugs: Sequence[str], workdir: Path) -> Path:
+        raise NotImplementedError("swe-polybench task materialization lands in a later phase")
+
+
+def select_instances(
+    instances: Iterable[PolybenchInstance], tiers: Sequence[FitTier]
+) -> tuple[PolybenchInstance, ...]:
+    wanted = set(tiers)
+    selected = sorted(
+        (instance for instance in instances if fit_tier(instance.change_shape) in wanted),
+        key=lambda instance: instance.instance_id,
+    )
+    if not selected:
+        raise ValueError(
+            f"swe-polybench tier selection {sorted(wanted)} matched no tasks"
+        )
+    return tuple(selected)
+
+
+def instance_checksum(instance: PolybenchInstance) -> str:
+    return fingerprint_mapping(asdict(instance))
+
+
+def load_dataset_rows(revision: str) -> Iterator[dict[str, Any]]:
+    csv.field_size_limit(sys.maxsize)
+    with tempfile.TemporaryDirectory(prefix="swe-polybench-") as download_dir:
+        csv_paths = [
+            path
+            for path in list_dataset_files(DATASET_REPO_ID, revision)
+            if path.endswith(".csv")
+        ]
+        if not csv_paths:
+            raise ValueError(
+                f"no csv data files found in {DATASET_REPO_ID} at revision {revision}"
+            )
+        files = fetch_dataset_files(
+            DATASET_REPO_ID, revision, csv_paths, Path(download_dir)
+        )
+        for file in files:
+            with file.open(newline="", encoding="utf-8") as handle:
+                yield from csv.DictReader(handle)
 
 
 def parse_polybench_rows(rows: Iterable[dict[str, Any]]) -> tuple[PolybenchInstance, ...]:
