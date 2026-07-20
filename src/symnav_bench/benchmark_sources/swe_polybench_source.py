@@ -102,13 +102,19 @@ class SwePolybenchTaskSource(BenchmarkTaskSource):
         available = [
             instance for instance in selected if images[instance.instance_id] is not None
         ]
-        excluded = len(selected) - len(available)
+        excluded = [
+            instance.instance_id
+            for instance in selected
+            if images[instance.instance_id] is None
+        ]
         if excluded:
             print(
-                f"swe-polybench: excluded {excluded} of {len(selected)} selected "
-                "tasks with no published eval image",
+                f"swe-polybench: excluded {len(excluded)} of {len(selected)} selected "
+                "tasks with no published eval image:",
                 file=sys.stderr,
             )
+            for instance_id in excluded:
+                print(f"  {instance_id}", file=sys.stderr)
         if not available:
             raise ValueError(
                 "swe-polybench tier selection matched no tasks with published "

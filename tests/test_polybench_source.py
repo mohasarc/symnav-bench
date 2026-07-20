@@ -485,7 +485,9 @@ def test_resolve_excludes_instances_without_eval_images(
     ).resolve()
 
     assert [task.slug for task in suite.tasks] == ["b-high"]
-    assert "excluded 1 of 2" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert "excluded 1 of 2" in stderr
+    assert "c-mid" in stderr
 
 
 def test_resolve_errors_when_no_selected_instance_has_an_image() -> None:
