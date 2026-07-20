@@ -174,6 +174,110 @@ def test_harness_identity_serializes_every_pinned_runtime_input() -> None:
     }
 
 
+def test_harness_identity_serializes_benchmark_provenance_for_non_deepswe() -> None:
+    identity = HarnessIdentity(
+        image_reference="image",
+        image_digest="sha256:image",
+        symnav_bench_sha="a" * 40,
+        pier_version="0.3.0",
+        deep_swe_sha=POLYBENCH_REVISION,
+        symnav_sha=None,
+        agent_name="codex",
+        agent_version="0.31.0",
+        bundle_id=None,
+        bundle_hash=None,
+        task_checksum="e" * 64,
+        prompt_rule_hash="f" * 64,
+        requested_model="gpt-5.6-terra",
+        requested_effort="medium",
+        benchmark="swe-polybench",
+        benchmark_source_revision=POLYBENCH_REVISION,
+        task_fit_tier="high",
+    )
+
+    serialized = identity.to_json()
+
+    assert serialized["benchmark"] == "swe-polybench"
+    assert serialized["benchmark_source_revision"] == POLYBENCH_REVISION
+    assert serialized["task_fit_tier"] == "high"
+    assert serialized["deep_swe_sha"] == POLYBENCH_REVISION
+
+
+def test_harness_identity_keeps_null_tier_for_multi_swe_bench() -> None:
+    identity = HarnessIdentity(
+        image_reference="image",
+        image_digest="sha256:image",
+        symnav_bench_sha="a" * 40,
+        pier_version="0.3.0",
+        deep_swe_sha="3" * 40,
+        symnav_sha=None,
+        agent_name="codex",
+        agent_version="0.31.0",
+        bundle_id=None,
+        bundle_hash=None,
+        task_checksum="e" * 64,
+        prompt_rule_hash="f" * 64,
+        requested_model="gpt-5.6-terra",
+        requested_effort="medium",
+        benchmark="multi-swe-bench",
+        benchmark_source_revision="3" * 40,
+    )
+
+    serialized = identity.to_json()
+
+    assert serialized["benchmark"] == "multi-swe-bench"
+    assert "task_fit_tier" in serialized
+    assert serialized["task_fit_tier"] is None
+
+
+def test_study_runner_records_benchmark_provenance_in_attempt(tmp_path) -> None:
+    task = TaskManifestEntry("microsoft__vscode-12345", "typescript", "f" * 64, tier="high")
+    suite = SuiteManifest("swe-polybench", POLYBENCH_REVISION, (task,), "e" * 64)
+    selection = BenchmarkSelection("swe-polybench", POLYBENCH_REVISION, ("high",))
+    configuration = AgentConfiguration(
+        "codex-terra-medium", AgentSpec("codex", "terra", "medium"), "0.31.0"
+    )
+    context = StudyRunContext(
+        configuration, suite, _integration_bundle(tmp_path), 9000, selection
+    )
+    config = RunConfig(
+        specs=[configuration.spec], conditions=[Condition("stock")],
+        tasks=["microsoft__vscode-12345"], reps=1, rep_start=0, parallel=1,
+        timeout_multiplier=None, max_limit_wait=timedelta(minutes=1),
+        results_dir=tmp_path / "results", tasks_dir=tmp_path,
+    )
+
+    def materializer(benchmark, declared_suite, slugs, target):
+        materialized = tmp_path / "materialized"
+        materialized.mkdir(exist_ok=True)
+        return materialized
+
+    def pier(job_yaml, jobs_dir):
+        (jobs_dir / "agent").mkdir()
+        (jobs_dir / "agent/trajectory.json").write_text('{"steps":[]}', encoding="utf-8")
+        (jobs_dir / "result.json").write_text(
+            '{"verifier_result":{"rewards":{"f2p":1.0}}}', encoding="utf-8"
+        )
+
+    runner = CellRunner(
+        config, _harness(), pier, study_context=context, materializer=materializer
+    )
+    attempt = runner.run_all()[0]
+
+    assert attempt.harness.benchmark == "swe-polybench"
+    assert attempt.harness.benchmark_source_revision == POLYBENCH_REVISION
+    assert attempt.harness.task_fit_tier == "high"
+    written = json.loads(
+        next((tmp_path / "results").glob("*/attempts/*/attempt.json")).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert written["harness"]["benchmark"] == "swe-polybench"
+    assert written["harness"]["benchmark_source_revision"] == POLYBENCH_REVISION
+    assert written["harness"]["task_fit_tier"] == "high"
+    assert written["harness"]["deep_swe_sha"] == POLYBENCH_REVISION
+
+
 def test_runner_continues_after_error(tmp_path) -> None:
     config = RunConfig(
         specs=[AgentSpec("codex", "m", "e")],
