@@ -22,8 +22,8 @@ from symnav_bench.run_spec import AgentSpec, parse_conditions
 from symnav_bench.study import StudyManifest, protocol_mapping
 from symnav_bench.suite import (
     SuiteManifest,
-    TaskManifestEntry,
     build_suite_manifest,
+    parse_suite_manifest,
     suite_mapping,
 )
 from symnav_bench.tasks import list_tasks
@@ -187,13 +187,7 @@ def batch_matrix_command(args: argparse.Namespace) -> int:
     from symnav_bench.workflow import select_batches, write_github_matrix
 
     study = StudyManifest.load(args.study)
-    suite_data = json.loads(args.suite.read_text(encoding="utf-8"))
-    suite = SuiteManifest(
-        benchmark="deepswe",
-        source_revision=suite_data["deep_swe_sha"],
-        tasks=tuple(TaskManifestEntry(**task) for task in suite_data["tasks"]),
-        fingerprint=suite_data["fingerprint"],
-    )
+    suite = parse_suite_manifest(json.loads(args.suite.read_text(encoding="utf-8")))
     existing = (
         StudyDataset.load(args.existing_study)
         if args.existing_study is not None and args.existing_study.exists()

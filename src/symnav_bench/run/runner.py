@@ -20,7 +20,7 @@ from symnav_bench.run.job_config import HarnessIdentity, build_job_yaml
 from symnav_bench.run.limits import find_limit_marker
 from symnav_bench.agent_integrations import AgentIntegrationBundle, SymnavIntegrationCatalog
 from symnav_bench.study import AgentConfiguration, StudyManifest
-from symnav_bench.suite import TaskManifestEntry
+from symnav_bench.suite import TaskManifestEntry, parse_suite_manifest
 
 
 PierRun = Callable[[Path, Path], None]
@@ -48,11 +48,8 @@ class StudyRunContext:
         configuration = next(
             item for item in study.configurations if item.id == configuration_id
         )
-        suite_data = json.loads(Path(suite_path).read_text(encoding="utf-8"))
-        tasks = {
-            item["slug"]: TaskManifestEntry(**item)
-            for item in suite_data["tasks"]
-        }
+        suite = parse_suite_manifest(json.loads(Path(suite_path).read_text(encoding="utf-8")))
+        tasks = {task.slug: task for task in suite.tasks}
         return cls(
             configuration=configuration,
             tasks=tasks,

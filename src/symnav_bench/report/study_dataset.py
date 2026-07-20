@@ -11,7 +11,7 @@ from symnav_bench.cells.attempt import AttemptRecord
 from symnav_bench.cells.attempt import SlotResult
 from symnav_bench.cells.cell import Cell
 from symnav_bench.study import StudyManifest
-from symnav_bench.suite import SuiteManifest
+from symnav_bench.suite import SuiteManifest, parse_suite_manifest
 
 
 @dataclass(frozen=True)
@@ -269,26 +269,7 @@ def import_legacy_cells(cells_dir: Path) -> LegacyDataset:
 
 
 def _load_suite_manifest(path: Path) -> SuiteManifest:
-    raw = _load_mapping(path)
-    task_values = raw.get("tasks")
-    if not isinstance(task_values, list):
-        raise ValueError("suite tasks must be a list")
-    from symnav_bench.suite import TaskManifestEntry
-
-    tasks = tuple(
-        TaskManifestEntry(
-            slug=str(_mapping(task).get("slug")),
-            language=str(_mapping(task).get("language")),
-            checksum=str(_mapping(task).get("checksum")),
-        )
-        for task in task_values
-    )
-    return SuiteManifest(
-        benchmark="deepswe",
-        source_revision=str(raw["deep_swe_sha"]),
-        tasks=tasks,
-        fingerprint=str(raw["fingerprint"]),
-    )
+    return parse_suite_manifest(_load_mapping(path))
 
 
 def _planned_semantic_slot(
