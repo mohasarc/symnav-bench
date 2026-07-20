@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from dataclasses import asdict
 from datetime import timedelta
 from pathlib import Path
@@ -17,7 +18,7 @@ from symnav_bench.benchmark_sources import benchmark_task_source
 from symnav_bench.deepswe import TASK_SLUGS, configured_tasks_dir, default_deepswe_root
 from symnav_bench.run.auth import validate_auth
 from symnav_bench.run.config import RunConfig
-from symnav_bench.run.runner import CellRunner, subprocess_pier_run
+from symnav_bench.run.runner import CellRunner, StudyRunContext, subprocess_pier_run
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, parse_conditions
 from symnav_bench.study import BenchmarkSelection, StudyManifest, protocol_mapping
@@ -130,8 +131,16 @@ def run_command(args: argparse.Namespace) -> int:
     symnav_sha = resolve_symnav_ref(args.symnav_ref)
     specs = [AgentSpec.parse(value) for value in args.agent]
     validate_auth(specs, os.environ)
-    tasks_dir = args.tasks_dir or configured_tasks_dir() or acquire_deepswe_tasks_dir(args.deep_swe_ref)
-    tasks = list_tasks(tasks_dir) if args.tasks == "all" else split_csv(args.tasks)
+    study_context = StudyRunContext.from_environment()
+    reject_adhoc_non_deepswe_suite(study_context)
+    if study_context is not None and study_context.benchmark.name != "deepswe":
+        tasks_dir = args.tasks_dir or Path(tempfile.mkdtemp(prefix="symnav-bench-tasks-"))
+        tasks = sorted(study_context.tasks) if args.tasks == "all" else split_csv(args.tasks)
+    else:
+        tasks_dir = (
+            args.tasks_dir or configured_tasks_dir() or acquire_deepswe_tasks_dir(args.deep_swe_ref)
+        )
+        tasks = list_tasks(tasks_dir) if args.tasks == "all" else split_csv(args.tasks)
     config = RunConfig(
         specs=specs,
         conditions=parse_conditions(args.conditions, symnav_sha),
@@ -150,8 +159,23 @@ def run_command(args: argparse.Namespace) -> int:
         image_version=os.environ.get("SYMNAV_BENCH_VERSION", __version__),
         deep_swe_ref=args.deep_swe_ref,
         symnav_ref=symnav_sha,
+        study_context=study_context,
     )
     return run_exit_code(runner.run_all())
+
+
+def reject_adhoc_non_deepswe_suite(study_context: StudyRunContext | None) -> None:
+    if study_context is not None:
+        return
+    suite_path = os.environ.get("SYMNAV_BENCH_SUITE_MANIFEST")
+    if not suite_path:
+        return
+    suite = parse_suite_manifest(json.loads(Path(suite_path).read_text(encoding="utf-8")))
+    if suite.benchmark != "deepswe":
+        raise ValueError(
+            f"benchmark {suite.benchmark!r} requires a declared study "
+            "(set SYMNAV_BENCH_STUDY_MANIFEST); ad-hoc runs support deepswe only"
+        )
 
 
 def acquire_deepswe_tasks_dir(deep_swe_ref: str) -> Path:

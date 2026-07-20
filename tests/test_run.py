@@ -204,8 +204,15 @@ def test_runner_continues_after_error(tmp_path) -> None:
 
 def test_study_runner_pins_bundle_task_and_agent_identity(tmp_path) -> None:
     task = TaskManifestEntry("task", "typescript", "f" * 64)
+    suite = SuiteManifest("deepswe", "a" * 40, (task,), "e" * 64)
     configuration = AgentConfiguration("codex-terra-medium", AgentSpec("codex", "terra", "medium"), "0.31.0")
-    context = StudyRunContext(configuration, {"task": task}, _integration_bundle(tmp_path), 9000, "a" * 40)
+    context = StudyRunContext(
+        configuration,
+        suite,
+        _integration_bundle(tmp_path),
+        9000,
+        BenchmarkSelection("deepswe", "a" * 40, None),
+    )
     config = RunConfig(
         specs=[configuration.spec], conditions=[Condition("symnav", "b" * 40)], tasks=["task"],
         reps=1, rep_start=0, parallel=1, timeout_multiplier=None,

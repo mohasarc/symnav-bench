@@ -19,7 +19,9 @@ class BenchmarkTaskSource(ABC):
     def ensure_tasks_dir(self, slugs: Sequence[str], workdir: Path) -> Path: ...
 
 
-def benchmark_task_source(selection: BenchmarkSelection) -> BenchmarkTaskSource:
+def benchmark_task_source(
+    selection: BenchmarkSelection, suite: SuiteManifest | None = None
+) -> BenchmarkTaskSource:
     from symnav_bench.benchmark_sources.deepswe_source import DeepsweTaskSource
     from symnav_bench.benchmark_sources.multi_swe_bench_source import (
         MultiSweBenchTaskSource,
@@ -31,7 +33,7 @@ def benchmark_task_source(selection: BenchmarkSelection) -> BenchmarkTaskSource:
     if selection.name == "deepswe":
         return DeepsweTaskSource(selection)
     if selection.name == "swe-polybench":
-        return SwePolybenchTaskSource(selection)
+        return SwePolybenchTaskSource(selection, suite=suite)
     if selection.name == "multi-swe-bench":
-        return MultiSweBenchTaskSource(selection)
+        return MultiSweBenchTaskSource(selection, suite=suite)
     raise ValueError(f"no task source registered for benchmark {selection.name!r}")
