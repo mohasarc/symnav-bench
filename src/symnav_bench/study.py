@@ -208,7 +208,7 @@ def parse_benchmark(data: dict[str, Any]) -> BenchmarkSelection:
     source = require_mapping(data.get("source"), "protocol.benchmark.source")
     revision = require_git_sha(source.get("revision"), "protocol.benchmark.source.revision")
     if name != "swe-polybench":
-        if data.get("tiers") is not None:
+        if "tiers" in data:
             raise ValueError("protocol.benchmark.tiers is only valid for swe-polybench")
         return BenchmarkSelection(
             name=cast(BenchmarkName, name), source_revision=revision, tiers=None

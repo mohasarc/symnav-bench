@@ -152,6 +152,10 @@ def test_v2_multi_swe_bench_manifest_loads_without_tiers(tmp_path: Path) -> None
             "tiers",
         ),
         (
+            {"name": "deepswe", "source": {"revision": "a" * 40}, "tiers": None},
+            "tiers",
+        ),
+        (
             {"name": "multi-swe-bench", "source": {"revision": "a" * 40}, "tiers": ["high"]},
             "tiers",
         ),
