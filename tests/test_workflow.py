@@ -137,7 +137,8 @@ def study_fixture(task_count: int = 2) -> tuple[StudyManifest, SuiteManifest]:
         configurations=(AgentConfiguration("codex", AgentSpec("codex", "terra", "medium"), "1"),),
     )
     suite = SuiteManifest(
-        deep_swe_sha="a" * 40,
+        benchmark="deepswe",
+        source_revision="a" * 40,
         tasks=tuple(TaskManifestEntry(f"task-{index:03d}", "typescript", f"{index:064x}") for index in range(task_count)),
         fingerprint="c" * 64,
     )

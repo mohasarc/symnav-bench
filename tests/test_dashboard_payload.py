@@ -95,6 +95,7 @@ def study_dataset() -> StudyDataset:
         (AgentConfiguration("codex-terra", AgentSpec("codex", "terra", "medium"), "0.31.0"),),
     )
     suite = SuiteManifest(
+        "deepswe",
         "a" * 40,
         (TaskManifestEntry("task", "typescript", "c" * 64),),
         "d" * 64,

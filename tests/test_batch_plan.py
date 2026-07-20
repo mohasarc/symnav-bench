@@ -153,7 +153,8 @@ def make_study(configuration_count: int, repetitions: int) -> StudyManifest:
 
 def make_suite(task_count: int) -> SuiteManifest:
     return SuiteManifest(
-        deep_swe_sha="a" * 40,
+        benchmark="deepswe",
+        source_revision="a" * 40,
         tasks=tuple(
             TaskManifestEntry(
                 slug=f"task-{index:02d}",

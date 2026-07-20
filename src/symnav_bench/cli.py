@@ -20,7 +20,12 @@ from symnav_bench.run.runner import CellRunner, subprocess_pier_run
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, parse_conditions
 from symnav_bench.study import StudyManifest, protocol_mapping
-from symnav_bench.suite import SuiteManifest, TaskManifestEntry, build_suite_manifest
+from symnav_bench.suite import (
+    SuiteManifest,
+    TaskManifestEntry,
+    build_suite_manifest,
+    suite_mapping,
+)
 from symnav_bench.tasks import list_tasks
 
 
@@ -184,7 +189,8 @@ def batch_matrix_command(args: argparse.Namespace) -> int:
     study = StudyManifest.load(args.study)
     suite_data = json.loads(args.suite.read_text(encoding="utf-8"))
     suite = SuiteManifest(
-        deep_swe_sha=suite_data["deep_swe_sha"],
+        benchmark="deepswe",
+        source_revision=suite_data["deep_swe_sha"],
         tasks=tuple(TaskManifestEntry(**task) for task in suite_data["tasks"]),
         fingerprint=suite_data["fingerprint"],
     )
@@ -315,11 +321,7 @@ def study_plan_mapping(
         "study_id": study.id,
         "protocol_fingerprint": study.protocol_fingerprint(),
         "protocol": protocol_mapping(study.protocol, study.schema_version),
-        "suite": {
-            "deep_swe_sha": suite.deep_swe_sha,
-            "fingerprint": suite.fingerprint,
-            "tasks": [asdict(task) for task in suite.tasks],
-        },
+        "suite": suite_mapping(suite),
         "configurations": [
             {
                 "id": configuration.id,

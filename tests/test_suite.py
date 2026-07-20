@@ -66,7 +66,8 @@ def test_builds_sorted_typescript_suite_and_resolves_revision_once(tmp_path: Pat
     )
 
     assert calls == [(tmp_path, "refs/tags/benchmark-v1")]
-    assert suite.deep_swe_sha == "a" * 40
+    assert suite.benchmark == "deepswe"
+    assert suite.source_revision == "a" * 40
     assert [task.slug for task in suite.tasks] == ["alpha", "zeta"]
     assert all(task.language == "typescript" for task in suite.tasks)
     assert all(len(task.checksum) == 64 for task in suite.tasks)

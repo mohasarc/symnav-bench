@@ -6,7 +6,15 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
+
+from symnav_bench.study import (
+    BenchmarkName,
+    FitTier,
+    require_list,
+    require_mapping,
+    require_string,
+)
 
 
 GitRevisionResolver = Callable[[Path, str], str]
@@ -18,11 +26,13 @@ class TaskManifestEntry:
     slug: str
     language: str
     checksum: str
+    tier: FitTier | None = None
 
 
 @dataclass(frozen=True)
 class SuiteManifest:
-    deep_swe_sha: str
+    benchmark: BenchmarkName
+    source_revision: str
     tasks: tuple[TaskManifestEntry, ...]
     fingerprint: str
 
@@ -47,8 +57,60 @@ def build_suite_manifest(
         for task_dir in sorted(tasks_dir.iterdir(), key=lambda path: path.name)
         if (entry := build_task_manifest_entry(task_dir)) is not None
     )
-    fingerprint = suite_fingerprint(resolved_sha, tasks)
-    return SuiteManifest(deep_swe_sha=resolved_sha, tasks=tasks, fingerprint=fingerprint)
+    fingerprint = suite_fingerprint("deepswe", resolved_sha, tasks)
+    return SuiteManifest(
+        benchmark="deepswe",
+        source_revision=resolved_sha,
+        tasks=tasks,
+        fingerprint=fingerprint,
+    )
+
+
+def parse_suite_manifest(raw: dict[str, Any]) -> SuiteManifest:
+    if "deep_swe_sha" not in raw:
+        raise ValueError("suite manifest must declare deep_swe_sha")
+    source_revision = require_string(raw.get("deep_swe_sha"), "suite deep_swe_sha")
+    return SuiteManifest(
+        benchmark="deepswe",
+        source_revision=source_revision,
+        tasks=parse_task_entries(raw.get("tasks")),
+        fingerprint=require_string(raw.get("fingerprint"), "suite fingerprint"),
+    )
+
+
+def parse_task_entries(value: object) -> tuple[TaskManifestEntry, ...]:
+    return tuple(
+        parse_task_entry(require_mapping(task, "suite task"))
+        for task in require_list(value, "suite tasks")
+    )
+
+
+def parse_task_entry(data: dict[str, Any]) -> TaskManifestEntry:
+    return TaskManifestEntry(
+        slug=require_string(data.get("slug"), "suite task slug"),
+        language=require_string(data.get("language"), "suite task language"),
+        checksum=require_string(data.get("checksum"), "suite task checksum"),
+    )
+
+
+def suite_mapping(suite: SuiteManifest) -> dict[str, Any]:
+    return {
+        "deep_swe_sha": suite.source_revision,
+        "fingerprint": suite.fingerprint,
+        "tasks": [task_entry_mapping(task) for task in suite.tasks],
+    }
+
+
+def task_entry_mapping(task: TaskManifestEntry) -> dict[str, Any]:
+    return {
+        "slug": task.slug,
+        "language": task.language,
+        "checksum": task.checksum,
+    }
+
+
+def serialize_suite_manifest(suite: SuiteManifest) -> str:
+    return json.dumps(suite_mapping(suite), indent=2, sort_keys=True) + "\n"
 
 
 def build_task_manifest_entry(task_dir: Path) -> TaskManifestEntry | None:
@@ -84,17 +146,16 @@ def directory_checksum(directory: Path) -> str:
     return digest.hexdigest()
 
 
-def suite_fingerprint(deep_swe_sha: str, tasks: tuple[TaskManifestEntry, ...]) -> str:
+def suite_fingerprint(
+    benchmark: BenchmarkName,
+    source_revision: str,
+    tasks: tuple[TaskManifestEntry, ...],
+) -> str:
+    if benchmark != "deepswe":
+        raise ValueError(f"suite fingerprint not implemented for benchmark {benchmark!r}")
     value = {
-        "deep_swe_sha": deep_swe_sha,
-        "tasks": [
-            {
-                "slug": task.slug,
-                "language": task.language,
-                "checksum": task.checksum,
-            }
-            for task in tasks
-        ],
+        "deep_swe_sha": source_revision,
+        "tasks": [task_entry_mapping(task) for task in tasks],
     }
     canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()

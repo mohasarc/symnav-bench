@@ -110,7 +110,8 @@ def test_external_reference_cannot_be_used_as_stock(tmp_path: Path) -> None:
 
 def suite() -> SuiteManifest:
     return SuiteManifest(
-        deep_swe_sha="a" * 40,
+        benchmark="deepswe",
+        source_revision="a" * 40,
         tasks=(
             TaskManifestEntry("alpha", "typescript", "1" * 64),
             TaskManifestEntry("beta", "typescript", "2" * 64),

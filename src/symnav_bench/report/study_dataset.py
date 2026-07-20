@@ -284,7 +284,8 @@ def _load_suite_manifest(path: Path) -> SuiteManifest:
         for task in task_values
     )
     return SuiteManifest(
-        deep_swe_sha=str(raw["deep_swe_sha"]),
+        benchmark="deepswe",
+        source_revision=str(raw["deep_swe_sha"]),
         tasks=tasks,
         fingerprint=str(raw["fingerprint"]),
     )
