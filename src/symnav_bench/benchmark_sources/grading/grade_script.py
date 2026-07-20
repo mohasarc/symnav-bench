@@ -219,7 +219,11 @@ def apply_patch(path):
     )
     if returncode == 0:
         return 0
-    return subprocess.call(["patch", "--batch", "--fuzz=5", "-p1", "-f", "-i", path])
+    try:
+        return subprocess.call(["patch", "--batch", "--fuzz=5", "-p1", "-f", "-i", path])
+    except OSError:
+        log("patch tool unavailable; treating unapplied patch as a failure")
+        return 1
 
 
 def cmd_prepare():

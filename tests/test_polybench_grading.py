@@ -351,3 +351,26 @@ def test_prepare_without_model_patch_grades_pristine_state(tmp_path: Path) -> No
 
     assert (repo / "source.txt").read_text(encoding="utf-8") == "original\n"
     assert not (tmp_path / "verifier" / "reward.json").exists()
+
+
+def test_prepare_without_patch_tool_still_scores_apply_failure(tmp_path: Path) -> None:
+    repo, base_commit, test_patch, model_patch = prepare_repo(tmp_path)
+    env = grading_dirs(tmp_path, grading_config(base_commit=base_commit), run_log=None)
+    (Path(env["TESTS_DIR"]) / "test.patch").write_text(test_patch, encoding="utf-8")
+    artifacts = Path(env["ARTIFACTS_DIR"])
+    artifacts.mkdir()
+    conflicting = model_patch.replace("original", "never-there")
+    (artifacts / "model.patch").write_text(conflicting, encoding="utf-8")
+    git_only_bin = tmp_path / "bin"
+    git_only_bin.mkdir()
+    git_path = subprocess.run(
+        ["which", "git"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (git_only_bin / "git").symlink_to(git_path)
+    env["PATH"] = str(git_only_bin)
+
+    run_grade_script(env, "prepare")
+
+    reward = json.loads((tmp_path / "verifier" / "reward.json").read_text())
+    assert reward["reward"] == 0
+    assert reward["apply_failed"] == 1
