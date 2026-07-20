@@ -4,11 +4,13 @@ import hashlib
 import json
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from symnav_bench.study import (
+    BENCHMARK_NAMES,
+    FIT_TIERS,
     BenchmarkName,
     FitTier,
     require_list,
@@ -67,46 +69,81 @@ def build_suite_manifest(
 
 
 def parse_suite_manifest(raw: dict[str, Any]) -> SuiteManifest:
-    if "deep_swe_sha" not in raw:
-        raise ValueError("suite manifest must declare deep_swe_sha")
-    source_revision = require_string(raw.get("deep_swe_sha"), "suite deep_swe_sha")
+    benchmark = parse_suite_benchmark(raw)
+    source_revision = (
+        require_string(raw.get("deep_swe_sha"), "suite deep_swe_sha")
+        if benchmark == "deepswe"
+        else require_string(raw.get("source_revision"), "suite source_revision")
+    )
     return SuiteManifest(
-        benchmark="deepswe",
+        benchmark=benchmark,
         source_revision=source_revision,
-        tasks=parse_task_entries(raw.get("tasks")),
+        tasks=parse_task_entries(raw.get("tasks"), benchmark),
         fingerprint=require_string(raw.get("fingerprint"), "suite fingerprint"),
     )
 
 
-def parse_task_entries(value: object) -> tuple[TaskManifestEntry, ...]:
+def parse_suite_benchmark(raw: dict[str, Any]) -> BenchmarkName:
+    if "deep_swe_sha" in raw:
+        if "benchmark" in raw:
+            raise ValueError("suite manifest cannot declare both deep_swe_sha and benchmark")
+        return "deepswe"
+    benchmark = require_string(raw.get("benchmark"), "suite benchmark")
+    if benchmark not in BENCHMARK_NAMES:
+        raise ValueError(f"unknown suite benchmark {benchmark!r}")
+    return cast(BenchmarkName, benchmark)
+
+
+def parse_task_entries(
+    value: object, benchmark: BenchmarkName
+) -> tuple[TaskManifestEntry, ...]:
     return tuple(
-        parse_task_entry(require_mapping(task, "suite task"))
+        parse_task_entry(require_mapping(task, "suite task"), benchmark)
         for task in require_list(value, "suite tasks")
     )
 
 
-def parse_task_entry(data: dict[str, Any]) -> TaskManifestEntry:
-    return TaskManifestEntry(
+def parse_task_entry(data: dict[str, Any], benchmark: BenchmarkName) -> TaskManifestEntry:
+    entry = TaskManifestEntry(
         slug=require_string(data.get("slug"), "suite task slug"),
         language=require_string(data.get("language"), "suite task language"),
         checksum=require_string(data.get("checksum"), "suite task checksum"),
     )
+    if "tier" not in data:
+        return entry
+    if benchmark != "swe-polybench":
+        raise ValueError("suite task tier is only valid for swe-polybench")
+    tier = require_string(data.get("tier"), "suite task tier")
+    if tier not in FIT_TIERS:
+        raise ValueError(f"unknown fit tier {tier!r}")
+    return replace(entry, tier=cast(FitTier, tier))
 
 
 def suite_mapping(suite: SuiteManifest) -> dict[str, Any]:
+    tasks = [task_entry_mapping(task) for task in suite.tasks]
+    if suite.benchmark == "deepswe":
+        return {
+            "deep_swe_sha": suite.source_revision,
+            "fingerprint": suite.fingerprint,
+            "tasks": tasks,
+        }
     return {
-        "deep_swe_sha": suite.source_revision,
+        "benchmark": suite.benchmark,
+        "source_revision": suite.source_revision,
         "fingerprint": suite.fingerprint,
-        "tasks": [task_entry_mapping(task) for task in suite.tasks],
+        "tasks": tasks,
     }
 
 
 def task_entry_mapping(task: TaskManifestEntry) -> dict[str, Any]:
-    return {
+    mapping: dict[str, Any] = {
         "slug": task.slug,
         "language": task.language,
         "checksum": task.checksum,
     }
+    if task.tier is not None:
+        mapping["tier"] = task.tier
+    return mapping
 
 
 def serialize_suite_manifest(suite: SuiteManifest) -> str:
@@ -151,11 +188,14 @@ def suite_fingerprint(
     source_revision: str,
     tasks: tuple[TaskManifestEntry, ...],
 ) -> str:
-    if benchmark != "deepswe":
-        raise ValueError(f"suite fingerprint not implemented for benchmark {benchmark!r}")
-    value = {
-        "deep_swe_sha": source_revision,
-        "tasks": [task_entry_mapping(task) for task in tasks],
-    }
+    task_mappings = [task_entry_mapping(task) for task in tasks]
+    if benchmark == "deepswe":
+        value: dict[str, Any] = {"deep_swe_sha": source_revision, "tasks": task_mappings}
+    else:
+        value = {
+            "benchmark": benchmark,
+            "source_revision": source_revision,
+            "tasks": task_mappings,
+        }
     canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
