@@ -540,7 +540,9 @@ def test_default_image_resolution_requests_one_pull_token_per_repository(
         def __exit__(self, *exc_info: object) -> bool:
             return False
 
-    def fake_open_request(url: str, headers: dict[str, str]) -> FakeResponse:
+    def fake_open_request(
+        url: str, headers: dict[str, str], method: str = "GET"
+    ) -> FakeResponse:
         requests.append(url)
         if "/token?" in url:
             return FakeResponse(json.dumps({"token": "t"}).encode(), {})

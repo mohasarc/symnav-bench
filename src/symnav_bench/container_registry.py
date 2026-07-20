@@ -28,12 +28,16 @@ MISSING_IMAGE_STATUSES = (401, 403, 404)
 
 
 class RequestOpener(Protocol):
-    def __call__(self, url: str, headers: dict[str, str]) -> HttpResponse: ...
+    def __call__(
+        self, url: str, headers: dict[str, str], method: str = "GET"
+    ) -> HttpResponse: ...
 
 
-def open_request(url: str, headers: dict[str, str]) -> HttpResponse:
+def open_request(
+    url: str, headers: dict[str, str], method: str = "GET"
+) -> HttpResponse:
     request = urllib.request.Request(
-        url, headers={"User-Agent": "symnav-bench", **headers}
+        url, headers={"User-Agent": "symnav-bench", **headers}, method=method
     )
     return urllib.request.urlopen(request)
 
@@ -75,7 +79,7 @@ class RegistryDigestResolver:
             token = self.pull_token(repository)
             manifest_url = f"{self.registry_host}/v2/{repository}/manifests/{tag}"
             headers = {"Authorization": f"Bearer {token}", "Accept": MANIFEST_ACCEPT}
-            with self.opener(manifest_url, headers) as response:
+            with self.opener(manifest_url, headers, method="HEAD") as response:
                 digest = response.headers.get("Docker-Content-Digest")
         except urllib.error.HTTPError as error:
             if error.code in MISSING_IMAGE_STATUSES:
