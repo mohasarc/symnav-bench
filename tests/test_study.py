@@ -10,6 +10,28 @@ import yaml
 
 from symnav_bench.study import StudyManifest
 
+COMMITTED_V1_MANIFEST = Path(__file__).parent / "fixtures" / "studies" / "deepswe-v1-manifest.yml"
+COMMITTED_V1_FINGERPRINT = "4695372f68fe8178dec2d1bd09e7864a1bcd251a6036cd6d300f370d115f6419"
+COMMITTED_V1_DEEP_SWE_SHA = "6db64a40f3318d8659238ff34a8cc4b491c49205"
+
+
+def test_committed_v1_manifest_loads_with_unchanged_fingerprint() -> None:
+    study = StudyManifest.load(COMMITTED_V1_MANIFEST)
+
+    assert study.schema_version == 1
+    assert study.id == "deepswe-ts-codex-terra-medium-pr94-smoke"
+    assert study.protocol_fingerprint() == COMMITTED_V1_FINGERPRINT
+    assert study.protocol.conditions == ("stock", "symnav")
+    assert study.protocol.repetitions == 1
+
+
+def test_committed_v1_manifest_normalizes_to_deepswe_benchmark() -> None:
+    study = StudyManifest.load(COMMITTED_V1_MANIFEST)
+
+    assert study.protocol.benchmark.name == "deepswe"
+    assert study.protocol.benchmark.source_revision == COMMITTED_V1_DEEP_SWE_SHA
+    assert study.protocol.benchmark.tiers is None
+
 
 def test_loads_pinned_study_with_multiple_configurations(tmp_path: Path) -> None:
     study_path = write_study(tmp_path / "study.yaml", study_data())
