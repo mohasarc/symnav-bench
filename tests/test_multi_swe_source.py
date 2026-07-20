@@ -560,4 +560,7 @@ def test_default_image_resolution_requests_one_pull_token_per_repository(
     repositories = {eval_image_repository(instance) for instance in
                     parse_multi_swe_rows(three_repo_rows())}
     assert len(token_requests) == len(repositories)
-    assert all(task.image.endswith(f"@{digest}") for task in suite.tasks)
+    manifest_requests = [url for url in requests if "/manifests/" in url]
+    instances = parse_multi_swe_rows(three_repo_rows())
+    assert len(manifest_requests) == len(instances)
+    assert len(suite.tasks) == len(instances)
