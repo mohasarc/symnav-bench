@@ -95,3 +95,21 @@ def test_runtime_nvm_sourcing_pins_nvm_dir(tmp_path: Path) -> None:
     compile(patched, str(module), "exec")
     assert "then . ~/.nvm/nvm.sh; fi" not in patched
     assert patched.count("NVM_DIR=$HOME/.nvm . ~/.nvm/nvm.sh; fi") == 2
+
+
+def test_apt_install_falls_back_to_archive_mirrors(tmp_path: Path) -> None:
+    module = write_codex_module(
+        tmp_path,
+        UNPATCHED_SNIPPET
+        + '\nROOT = (\n'
+        + '    "  apt-get update && apt-get install -y curl ripgrep;"\n'
+        + ')\n',
+    )
+
+    patch_codex_nvm_install(module)
+
+    patched = module.read_text(encoding="utf-8")
+    compile(patched, str(module), "exec")
+    assert "archive.debian.org" in patched
+    assert "apt-get update && apt-get install -y curl ripgrep;" not in patched
+    assert patched.count("apt-get install -y curl ripgrep") == 1
