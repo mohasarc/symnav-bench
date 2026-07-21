@@ -18,13 +18,19 @@ from symnav_bench.agents.pier_compat import ClaudeCode
 
 
 class StockClaudeCode(ClaudeCode):
-    def __init__(self, *, integration_bundle: AgentIntegrationBundle | Mapping[str, Any], **kwargs):
+    def __init__(
+        self,
+        *,
+        integration_bundle: AgentIntegrationBundle | Mapping[str, Any],
+        workdir: str = "/app",
+        **kwargs,
+    ):
         logs_dir = kwargs.get("logs_dir")
         bundle = runtime_integration_bundle(integration_bundle)
         self._symnav_bench_steps = (
-            toolchain_root_step(),
-            *claude_integration_steps(bundle, treatment=False),
-            workspace_capture_step(logs_dir, ("claude", "claude-code")),
+            toolchain_root_step(workdir),
+            *claude_integration_steps(bundle, treatment=False, workdir=workdir),
+            workspace_capture_step(logs_dir, ("claude", "claude-code"), workdir=workdir),
         )
         super().__init__(**kwargs)
 
@@ -42,22 +48,24 @@ class SymnavClaudeCode(StockClaudeCode):
         *,
         symnav_sha: str,
         integration_bundle: AgentIntegrationBundle | Mapping[str, Any],
+        workdir: str = "/app",
         **kwargs,
     ):
         logs_dir = kwargs.get("logs_dir")
         bundle = runtime_integration_bundle(integration_bundle)
         self._symnav_bench_steps = (
-            toolchain_root_step(),
-            *claude_integration_steps(bundle, treatment=True),
+            toolchain_root_step(workdir),
+            *claude_integration_steps(bundle, treatment=True, workdir=workdir),
             InstallStep(
                 "install symnav",
                 pinned_symnav_install_script(
                     symnav_sha,
                     codex=False,
                     allowed_commands=bundle.allowed_commands,
+                    workdir=workdir,
                 ),
             ),
-            workspace_capture_step(logs_dir, ("claude", "claude-code")),
+            workspace_capture_step(logs_dir, ("claude", "claude-code"), workdir=workdir),
         )
         ClaudeCode.__init__(self, **kwargs)
 

@@ -21,7 +21,7 @@ def test_pinned_symnav_install_script_checks_out_sha_and_builds() -> None:
     assert "pnpm build" in script
     assert "allowed_commands='overview refs'" in script
     assert "Unsupported symnav invocation for this benchmark arm." in script
-    assert "exec pnpm --dir /opt/symnav --filter symnav dev --cwd /app \"$@\"" in script
+    assert 'exec pnpm --dir /opt/symnav --filter symnav dev --cwd /app "\\$@"' in script
     assert "ln -sf /app/bin/symnav /usr/local/bin/symnav" in script
 
 
@@ -72,7 +72,7 @@ def test_install_layer_targets_the_task_workdir() -> None:
         workdir="/testbed",
     )
 
-    assert 'exec pnpm --dir /opt/symnav --filter symnav dev --cwd /testbed "$@"' in script
+    assert 'exec pnpm --dir /opt/symnav --filter symnav dev --cwd /testbed "\\$@"' in script
     assert "ln -sf /testbed/bin/symnav /usr/local/bin/symnav" in script
     assert "/app" not in script
 
@@ -101,4 +101,4 @@ def test_symnav_install_bootstraps_node_and_pnpm_when_missing() -> None:
     assert "nvm-sh/nvm" in script
     assert "nvm install 22" in script
     assert "npm install -g pnpm@10" in script
-    assert 'PATH="$symnav_bench_node_bin:$PATH"' in script
+    assert 'PATH="$symnav_bench_node_bin:\\$PATH"' in script

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import tomllib
 import yaml
 from pathlib import Path
 
@@ -53,8 +54,11 @@ def build_job_yaml(
 ) -> str:
     spec = configuration.spec if isinstance(configuration, AgentConfiguration) else configuration
     agent_version = configuration.agent_version if isinstance(configuration, AgentConfiguration) else None
-    agent = _agent_block(spec, condition, integration, agent_version, wall_clock_seconds)
     task_name = task.slug if isinstance(task, TaskManifestEntry) else task
+    workdir = task_workdir(tasks_dir / task_name)
+    agent = _agent_block(
+        spec, condition, integration, agent_version, wall_clock_seconds, workdir
+    )
     payload = {
         "agents": [agent],
         "tasks": [{"path": str(tasks_dir / task_name)}],
@@ -69,12 +73,25 @@ def build_job_yaml(
     return yaml.safe_dump(payload, sort_keys=True)
 
 
+def task_workdir(task_dir: Path) -> str | None:
+    task_toml = task_dir / "task.toml"
+    if not task_toml.exists():
+        return None
+    parsed = tomllib.loads(task_toml.read_text(encoding="utf-8"))
+    environment = parsed.get("environment")
+    if not isinstance(environment, dict):
+        return None
+    workdir = environment.get("workdir")
+    return workdir if isinstance(workdir, str) and workdir else None
+
+
 def _agent_block(
     spec: AgentSpec,
     condition: Condition,
     integration: AgentIntegrationBundle | None,
     agent_version: str | None,
     wall_clock_seconds: int | None,
+    workdir: str | None = None,
 ) -> dict[str, object]:
     if spec.agent == "claude" and condition.kind == "stock":
         return _agent_config(
@@ -87,6 +104,7 @@ def _agent_block(
             integration=integration,
             agent_version=agent_version,
             wall_clock_seconds=wall_clock_seconds,
+            workdir=workdir,
         )
     if spec.agent == "claude":
         return _agent_config(
@@ -97,6 +115,7 @@ def _agent_block(
             integration=integration,
             agent_version=agent_version,
             wall_clock_seconds=wall_clock_seconds,
+            workdir=workdir,
         )
     if condition.kind == "stock":
         return _agent_config(
@@ -105,6 +124,7 @@ def _agent_block(
             integration=integration,
             agent_version=agent_version,
             wall_clock_seconds=wall_clock_seconds,
+            workdir=workdir,
         )
     return _agent_config(
         spec,
@@ -114,6 +134,7 @@ def _agent_block(
         integration=integration,
         agent_version=agent_version,
         wall_clock_seconds=wall_clock_seconds,
+        workdir=workdir,
     )
 
 
@@ -125,8 +146,11 @@ def _agent_config(
     integration: AgentIntegrationBundle | None = None,
     agent_version: str | None = None,
     wall_clock_seconds: int | None = None,
+    workdir: str | None = None,
 ) -> dict[str, object]:
     kwargs = {"reasoning_effort": spec.effort}
+    if workdir is not None and workdir != "/app" and "import_path" in base:
+        kwargs["workdir"] = workdir
     if symnav_sha is not None:
         kwargs["symnav_sha"] = symnav_sha
     if symnav_skill_variant != "all":
