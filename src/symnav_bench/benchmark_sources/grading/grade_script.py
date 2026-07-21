@@ -325,6 +325,36 @@ def apply_patch(path):
         return 1
 
 
+def patched_paths(patch_path):
+    completed = subprocess.run(
+        ["git", "apply", "--numstat", patch_path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    paths = []
+    for line in completed.stdout.decode("utf-8", errors="replace").splitlines():
+        columns = line.split("\t")
+        if len(columns) == 3 and columns[2]:
+            paths.append(columns[2])
+    return paths
+
+
+def reset_paths_to_base(paths):
+    for path in paths:
+        tracked = (
+            subprocess.call(
+                ["git", "ls-files", "--error-unmatch", path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            == 0
+        )
+        if tracked:
+            subprocess.call(["git", "checkout", "--", path])
+        elif os.path.isfile(path):
+            os.remove(path)
+
+
 def cmd_prepare():
     config = load_config()
     make_dirs(verifier_dir())
@@ -336,20 +366,21 @@ def cmd_prepare():
     subprocess.call(["git", "reset", "--hard"])
 
     test_patch = os.path.join(tests_dir(), "test.patch")
+    model_patch = os.path.join(artifacts_dir(), "model.patch")
+    if os.path.isfile(model_patch) and os.path.getsize(model_patch) > 0:
+        if apply_patch(model_patch) != 0:
+            log("ERROR: submitted model.patch failed to apply")
+            write_reward(rewards(TestOutcomes.of(), config["f2p"], config["p2p"], True))
+            return 0
+        log("model.patch applied (%d bytes)" % os.path.getsize(model_patch))
+    else:
+        log("no model.patch submitted - grading pristine base state")
+
+    reset_paths_to_base(patched_paths(test_patch))
     if apply_patch(test_patch) != 0:
         log("ERROR: test.patch failed to apply")
         return 5
     log("test.patch applied")
-
-    model_patch = os.path.join(artifacts_dir(), "model.patch")
-    if not os.path.isfile(model_patch) or os.path.getsize(model_patch) == 0:
-        log("no model.patch submitted - grading pristine base state")
-        return 0
-    if apply_patch(model_patch) != 0:
-        log("ERROR: submitted model.patch failed to apply")
-        write_reward(rewards(TestOutcomes.of(), config["f2p"], config["p2p"], True))
-        return 0
-    log("model.patch applied (%d bytes)" % os.path.getsize(model_patch))
     return 0
 
 

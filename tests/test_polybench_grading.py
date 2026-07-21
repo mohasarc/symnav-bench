@@ -310,7 +310,7 @@ def prepare_repo(tmp_path: Path) -> tuple[Path, str, str, str]:
     return repo, base_commit, test_patch, model_patch
 
 
-def test_prepare_applies_test_patch_then_model_patch(tmp_path: Path) -> None:
+def test_prepare_applies_model_patch_then_test_patch(tmp_path: Path) -> None:
     repo, base_commit, test_patch, model_patch = prepare_repo(tmp_path)
     env = grading_dirs(tmp_path, grading_config(base_commit=base_commit), run_log=None)
     (Path(env["TESTS_DIR"]) / "test.patch").write_text(test_patch, encoding="utf-8")
@@ -339,7 +339,7 @@ def test_prepare_grades_unappliable_model_patch_as_apply_failed(tmp_path: Path) 
     reward = json.loads((tmp_path / "verifier" / "reward.json").read_text())
     assert reward["reward"] == 0
     assert reward["apply_failed"] == 1
-    assert (repo / "spec.txt").exists()
+    assert not (repo / "spec.txt").exists()
 
 
 def test_prepare_resets_image_baked_edits_so_model_patch_applies(
