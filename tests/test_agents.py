@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from symnav_bench.agents.install import (
     append_text_step,
+    capture_pre_agent_baseline_step,
     pinned_symnav_install_script,
     toolchain_root_step,
     workspace_capture_step,
@@ -102,3 +103,12 @@ def test_symnav_install_bootstraps_node_and_pnpm_when_missing() -> None:
     assert "nvm install 22" in script
     assert "npm install -g pnpm@10" in script
     assert 'PATH="$symnav_bench_node_bin:\\$PATH"' in script
+
+
+def test_pre_agent_baseline_snapshot_is_the_final_workdir_step() -> None:
+    step = capture_pre_agent_baseline_step("/testbed")
+
+    assert "cd /testbed" in step.command
+    assert 'GIT_INDEX_FILE="$baseline_index" git add -A' in step.command
+    assert "symnav-bench-baseline-tree" in step.command
+    assert "/app" not in step.command
