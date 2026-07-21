@@ -85,5 +85,5 @@ def test_runtime_nvm_sourcing_pins_nvm_dir(tmp_path: Path) -> None:
     patch_codex_nvm_install(module)
 
     patched = module.read_text(encoding="utf-8")
-    assert ". ~/.nvm/nvm.sh; fi" not in patched
+    assert "then . ~/.nvm/nvm.sh; fi" not in patched
     assert patched.count('NVM_DIR="$HOME/.nvm" . ~/.nvm/nvm.sh; fi') == 2
