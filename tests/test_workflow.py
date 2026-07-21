@@ -9,7 +9,13 @@ from symnav_bench.batch_plan import plan_trial_slots
 from symnav_bench.cells.attempt import SlotResult
 from symnav_bench.report.study_dataset import StudyDataset
 from symnav_bench.run_spec import AgentSpec
-from symnav_bench.study import AgentConfiguration, StudyManifest, StudyProtocol, SymnavRevision
+from symnav_bench.study import (
+    AgentConfiguration,
+    BenchmarkSelection,
+    StudyManifest,
+    StudyProtocol,
+    SymnavRevision,
+)
 from symnav_bench.suite import SuiteManifest, TaskManifestEntry
 from symnav_bench.workflow import build_raw_archive, merge_attempt_artifacts, select_batches
 
@@ -119,7 +125,7 @@ def study_fixture(task_count: int = 2) -> tuple[StudyManifest, SuiteManifest]:
         schema_version=1,
         id="study",
         protocol=StudyProtocol(
-            deep_swe_sha="a" * 40,
+            benchmark=BenchmarkSelection("deepswe", "a" * 40, None),
             symnav=SymnavRevision("b" * 40, "main", 1, "main", "b" * 40, None),
             repetitions=1,
             wall_clock_seconds=9000,
@@ -131,7 +137,8 @@ def study_fixture(task_count: int = 2) -> tuple[StudyManifest, SuiteManifest]:
         configurations=(AgentConfiguration("codex", AgentSpec("codex", "terra", "medium"), "1"),),
     )
     suite = SuiteManifest(
-        deep_swe_sha="a" * 40,
+        benchmark="deepswe",
+        source_revision="a" * 40,
         tasks=tuple(TaskManifestEntry(f"task-{index:03d}", "typescript", f"{index:064x}") for index in range(task_count)),
         fingerprint="c" * 64,
     )

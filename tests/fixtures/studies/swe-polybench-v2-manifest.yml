@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "id": "swe-polybench-ts-codex-terra-medium-smoke",
+  "protocol_fingerprint": "64cae105cbe79ed19d39ab6a40ea39fa86d4d744c12e8b6aa773e9e043b844de",
+  "protocol": {
+    "benchmark": {
+      "name": "swe-polybench",
+      "source": {
+        "revision": "1234567890abcdef1234567890abcdef12345678"
+      },
+      "tiers": [
+        "high",
+        "mid"
+      ]
+    },
+    "symnav": {
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "kind": "main",
+      "evaluation_sequence": 2,
+      "base_ref": "main",
+      "base_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "pull_request": null
+    },
+    "repetitions": 1,
+    "wall_clock_seconds": 9000,
+    "randomization_seed": 20260713,
+    "conditions": [
+      "stock",
+      "symnav"
+    ],
+    "scoring_policy": "deepswe-pass-fraction-v1",
+    "practical_uplift_points": 5.0
+  },
+  "configurations": [
+    {
+      "id": "codex-gpt-5.6-terra-medium",
+      "agent": "codex",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "agent_version": "0.144.1"
+    }
+  ]
+}

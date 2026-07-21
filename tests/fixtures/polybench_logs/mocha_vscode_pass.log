@@ -1,0 +1,58 @@
+yarn run v1.22.4
+$ gulp compile --max_old_space_size=4095
+[10:21:03] Starting 'compile' ...
+[10:27:44] Finished 'compile' after 6.7 min
++ xvfb-run --auto-servernum --server-args='-screen 0 1024x768x24' ./scripts/test.sh --run src/vs/editor/contrib/suggest/test/suggestModel.test.ts --reporter json --no-sandbox --exit
+{
+  "stats": {
+    "suites": 3,
+    "tests": 4,
+    "passes": 4,
+    "pending": 0,
+    "failures": 0,
+    "start": "2025-02-04T00:14:13.618Z",
+    "end": "2025-02-04T00:14:13.836Z",
+    "duration": 218
+  },
+  "tests": [
+    {
+      "title": "Trigger (full) completions when (incomplete) completions are already active #99504",
+      "fullTitle": "SuggestModel - TriggerAndCancelOracle Trigger (full) completions when (incomplete) completions are already active #99504",
+      "duration": 41,
+      "err": {}
+    }
+  ],
+  "pending": [],
+  "failures": [],
+  "passes": [
+    {
+      "title": "Trigger (full) completions when (incomplete) completions are already active #99504",
+      "fullTitle": "SuggestModel - TriggerAndCancelOracle Trigger (full) completions when (incomplete) completions are already active #99504",
+      "duration": 41,
+      "speed": "medium",
+      "err": {}
+    },
+    {
+      "title": "Context - shouldAutoTrigger",
+      "fullTitle": "SuggestModel - Context Context - shouldAutoTrigger",
+      "duration": 3,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "trigger - on type",
+      "fullTitle": "SuggestModel - TriggerAndCancelOracle trigger - on type",
+      "duration": 12,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "#17400: Keep filtering suggestModel.ts after space",
+      "fullTitle": "SuggestModel - TriggerAndCancelOracle #17400: Keep filtering suggestModel.ts after space",
+      "duration": 9,
+      "speed": "fast",
+      "err": {}
+    }
+  ]
+}
+Container exited with status code: 0

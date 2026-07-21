@@ -1,0 +1,11 @@
+{
+  "deep_swe_sha": "6db64a40f3318d8659238ff34a8cc4b491c49205",
+  "fingerprint": "2bc576336ca85c7750a00c7d4bc3bb56e7bd372840ce5f699601a9a4b488d1b3",
+  "tasks": [
+    {
+      "checksum": "68888fe37231bc0d37021056933f8a29b8527716b87027c7076b57c90fb6a1f2",
+      "language": "typescript",
+      "slug": "ts-pattern-match-each"
+    }
+  ]
+}

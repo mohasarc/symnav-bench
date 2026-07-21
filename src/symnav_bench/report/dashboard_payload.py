@@ -55,17 +55,7 @@ def build_dashboard_payload(
     )
     return DashboardPayload(
         schema_version=1,
-        study={
-            "id": dataset.manifest.id,
-            "protocol_fingerprint": dataset.manifest.protocol_fingerprint(),
-            "suite_fingerprint": dataset.suite.fingerprint,
-            "deep_swe_sha": dataset.manifest.protocol.deep_swe_sha,
-            "symnav_revision": asdict(dataset.manifest.protocol.symnav),
-            "repetitions": dataset.manifest.protocol.repetitions,
-            "conditions": list(dataset.manifest.protocol.conditions),
-            "scoring_policy": dataset.manifest.protocol.scoring_policy,
-            "practical_uplift_points": dataset.manifest.protocol.practical_uplift_points,
-        },
+        study=_study_mapping(dataset),
         coverage=_study_coverage(metrics, len(dataset.suite.tasks)),
         configurations=tuple(
             _configuration_mapping(item, configuration_ids[_identity(item)])
@@ -90,6 +80,25 @@ def build_dashboard_payload(
         attempts=attempts + retries,
         warnings=dataset.warnings,
     )
+
+
+def _study_mapping(dataset: StudyDataset) -> dict[str, Any]:
+    benchmark = dataset.manifest.protocol.benchmark
+    study = {
+        "id": dataset.manifest.id,
+        "protocol_fingerprint": dataset.manifest.protocol_fingerprint(),
+        "suite_fingerprint": dataset.suite.fingerprint,
+        "deep_swe_sha": benchmark.source_revision,
+        "symnav_revision": asdict(dataset.manifest.protocol.symnav),
+        "repetitions": dataset.manifest.protocol.repetitions,
+        "conditions": list(dataset.manifest.protocol.conditions),
+        "scoring_policy": dataset.manifest.protocol.scoring_policy,
+        "practical_uplift_points": dataset.manifest.protocol.practical_uplift_points,
+    }
+    if benchmark.name != "deepswe":
+        study["benchmark"] = benchmark.name
+        study["benchmark_source_revision"] = benchmark.source_revision
+    return study
 
 
 def _configuration_ids(dataset: StudyDataset) -> dict[tuple[str, ...], str]:
@@ -182,7 +191,7 @@ def _task_mapping(
         )
         if reason is not None:
             failure_counts[reason] = failure_counts.get(reason, 0) + 1
-    return {
+    row: dict[str, Any] = {
         "configuration_id": configuration_id,
         "configuration_key": ":".join(_identity(metrics)),
         "condition": metrics.key.condition,
@@ -205,6 +214,9 @@ def _task_mapping(
         "failure_counts": failure_counts,
         "adoption": asdict(task.adoption) if task.adoption is not None else None,
     }
+    if task.tier is not None:
+        row["tier"] = task.tier
+    return row
 
 
 def _comparison_mapping(

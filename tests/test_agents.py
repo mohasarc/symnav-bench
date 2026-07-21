@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from symnav_bench.agents.install import (
     append_text_step,
+    capture_pre_agent_baseline_step,
     pinned_symnav_install_script,
     toolchain_root_step,
     workspace_capture_step,
@@ -21,7 +22,7 @@ def test_pinned_symnav_install_script_checks_out_sha_and_builds() -> None:
     assert "pnpm build" in script
     assert "allowed_commands='overview refs'" in script
     assert "Unsupported symnav invocation for this benchmark arm." in script
-    assert "exec pnpm --dir /opt/symnav --filter symnav dev --cwd /app \"$@\"" in script
+    assert 'exec pnpm --dir /opt/symnav --filter symnav dev --cwd /app "\\$@"' in script
     assert "ln -sf /app/bin/symnav /usr/local/bin/symnav" in script
 
 
@@ -62,3 +63,52 @@ def test_workspace_capture_defaults_to_persisted_agent_logs() -> None:
     step = workspace_capture_step(None, ("claude",))
     assert "logs_dir=/logs/agent" in step.command
     assert "workspace/app" in step.command
+
+
+def test_install_layer_targets_the_task_workdir() -> None:
+    script = pinned_symnav_install_script(
+        "a" * 40,
+        codex=True,
+        allowed_commands=("overview",),
+        workdir="/testbed",
+    )
+
+    assert 'exec pnpm --dir /opt/symnav --filter symnav dev --cwd /testbed "\\$@"' in script
+    assert "ln -sf /testbed/bin/symnav /usr/local/bin/symnav" in script
+    assert "/app" not in script
+
+    root_step = toolchain_root_step("/testbed")
+    assert "/testbed/.git/info" in root_step.command
+    assert "/app" not in root_step.command
+
+    append_step = append_text_step("/testbed/AGENTS.md", "hello", workdir="/testbed")
+    assert 'rel="${path#/testbed/}"' in append_step.command
+    assert "git -C /testbed" in append_step.command
+    assert "/app" not in append_step.command
+
+    capture_step = workspace_capture_step(None, ("codex",), workdir="/testbed")
+    assert "git -C /testbed diff >" in capture_step.command
+    assert "/app/" not in capture_step.command
+
+
+def test_symnav_install_bootstraps_node_and_pnpm_when_missing() -> None:
+    script = pinned_symnav_install_script(
+        "a" * 40,
+        codex=True,
+        allowed_commands=("overview",),
+    )
+
+    assert "command -v pnpm" in script
+    assert "nvm-sh/nvm" in script
+    assert "nvm install 22" in script
+    assert "npm install -g pnpm@10" in script
+    assert 'PATH="$symnav_bench_node_bin:\\$PATH"' in script
+
+
+def test_pre_agent_baseline_snapshot_is_the_final_workdir_step() -> None:
+    step = capture_pre_agent_baseline_step("/testbed")
+
+    assert "cd /testbed" in step.command
+    assert 'GIT_INDEX_FILE="$baseline_index" git add -A' in step.command
+    assert "symnav-bench-baseline-tree" in step.command
+    assert "/app" not in step.command

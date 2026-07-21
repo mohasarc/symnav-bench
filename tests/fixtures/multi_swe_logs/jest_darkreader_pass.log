@@ -1,0 +1,18 @@
+> darkreader@4.9.58 test:ci
+> jest --config=tests/unit/unit.config.js --ci
+
+PASS tests/utils/time.tests.ts
+  ✓ Time parse (3 ms)
+  ✓ Nigth check
+PASS tests/config/config.tests.ts (12.293 s)
+  ✓ Dark Sites list (230 ms)
+PASS tests/generators/utils/parse.tests.ts
+  ✓ Base64 in CSS (4 ms)
+  ✓ Implied wildcards (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        14.9 s
+Ran all test suites.
+Container exited with status code: 0

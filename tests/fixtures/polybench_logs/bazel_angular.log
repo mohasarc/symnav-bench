@@ -1,0 +1,8 @@
+Now using node v10.24.1 (npm v6.14.11)
+INFO: Analyzed 3 targets (0 packages loaded, 0 targets configured).
+INFO: Found 3 test targets...
+//packages/compiler-cli/ngcc/test:test                                   PASSED in 55.2s
+[32m//packages/compiler/test/selector:selector[0m PASSED in 12.1s
+//packages/core/test/bundling/injection:symbol_test                      FAILED in 8.4s
+INFO: Build completed, 1 test FAILED, 3 total actions
+Container exited with status code: 3

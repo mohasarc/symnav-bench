@@ -17,6 +17,7 @@ const filters = document.querySelector("#filters");
 
 document.querySelector("#study-title").textContent = payload.study.id;
 document.querySelector("#study-subtitle").textContent =
+  `${payload.study.benchmark ?? "deepswe"} · ` +
   `${payload.coverage.scored_slots}/${payload.coverage.planned_slots} scored trials`;
 document.querySelector("#coverage-badge").textContent = coverageLabel(payload.coverage);
 document.querySelector("#tabs").addEventListener("click", ({ target }) => {
@@ -819,6 +820,10 @@ function renderMatrix(container, taskRows) {
     metrics: { ...row.metrics, uplift: taskUplift(row) },
   }));
   const matrix = buildMatrix(enriched, state.metric, state.pivot);
+  const tierByTask = new Map(
+    payload.tasks.filter((row) => row.tier).map((row) => [row.task, row.tier]),
+  );
+  const showTier = tierByTask.size > 0;
   const table = document.createElement("table");
   table.className = "heatmap";
   const head = table.createTHead().insertRow();
@@ -826,10 +831,21 @@ function renderMatrix(container, taskRows) {
   corner.scope = "col";
   corner.textContent = matrix.pivot === "tasks" ? "Task" : "Configuration";
   head.append(corner);
+  if (showTier && matrix.pivot === "tasks") {
+    const tierHeader = document.createElement("th");
+    tierHeader.scope = "col";
+    tierHeader.textContent = "Tier";
+    head.append(tierHeader);
+  }
   for (const column of matrix.columnKeys) {
     const th = document.createElement("th");
     th.scope = "col";
-    th.textContent = matrix.pivot === "tasks" ? configurationLabel(column) : column;
+    th.textContent =
+      matrix.pivot === "tasks"
+        ? configurationLabel(column)
+        : showTier && tierByTask.has(column)
+          ? `${column} · ${tierByTask.get(column)}`
+          : column;
     if (column.endsWith(":symnav")) th.className = "full-symnav";
     head.append(th);
   }
@@ -841,6 +857,11 @@ function renderMatrix(container, taskRows) {
     label.textContent = matrix.pivot === "tasks" ? rowKey : configurationLabel(rowKey);
     if (rowKey.endsWith(":symnav")) label.className = "full-symnav";
     row.append(label);
+    if (showTier && matrix.pivot === "tasks") {
+      const tierCell = row.insertCell();
+      tierCell.className = "tier-cell";
+      tierCell.textContent = tierByTask.get(rowKey) ?? "—";
+    }
     for (const columnKey of matrix.columnKeys) {
       const value = matrix.values[rowKey][columnKey];
       const task = matrix.pivot === "tasks" ? rowKey : columnKey;
@@ -891,7 +912,9 @@ function openDrawer(taskRow) {
   heading.append(title, close);
   const status = document.createElement("p");
   status.className = `status-line ${model.complete ? "complete" : "provisional"}`;
-  status.textContent = `${model.condition} · ${model.complete ? "4/4 scored" : "incomplete"}`;
+  status.textContent =
+    `${model.condition} · ${model.complete ? "4/4 scored" : "incomplete"}` +
+    (taskRow.tier ? ` · tier ${taskRow.tier}` : "");
   const metrics = definitionList(model.metrics);
   const adoption = sectionWithList("Tool adoption", model.adoption ?? {});
   const scored = attemptSection("Scored trials", model.scoredTrials);

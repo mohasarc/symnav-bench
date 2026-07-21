@@ -10,6 +10,28 @@ import yaml
 
 from symnav_bench.study import StudyManifest
 
+COMMITTED_V1_MANIFEST = Path(__file__).parent / "fixtures" / "studies" / "deepswe-v1-manifest.yml"
+COMMITTED_V1_FINGERPRINT = "4695372f68fe8178dec2d1bd09e7864a1bcd251a6036cd6d300f370d115f6419"
+COMMITTED_V1_DEEP_SWE_SHA = "6db64a40f3318d8659238ff34a8cc4b491c49205"
+
+
+def test_committed_v1_manifest_loads_with_unchanged_fingerprint() -> None:
+    study = StudyManifest.load(COMMITTED_V1_MANIFEST)
+
+    assert study.schema_version == 1
+    assert study.id == "deepswe-ts-codex-terra-medium-pr94-smoke"
+    assert study.protocol_fingerprint() == COMMITTED_V1_FINGERPRINT
+    assert study.protocol.conditions == ("stock", "symnav")
+    assert study.protocol.repetitions == 1
+
+
+def test_committed_v1_manifest_normalizes_to_deepswe_benchmark() -> None:
+    study = StudyManifest.load(COMMITTED_V1_MANIFEST)
+
+    assert study.protocol.benchmark.name == "deepswe"
+    assert study.protocol.benchmark.source_revision == COMMITTED_V1_DEEP_SWE_SHA
+    assert study.protocol.benchmark.tiers is None
+
 
 def test_loads_pinned_study_with_multiple_configurations(tmp_path: Path) -> None:
     study_path = write_study(tmp_path / "study.yaml", study_data())
@@ -73,6 +95,115 @@ def test_rejects_protocol_edits_under_existing_study_id(
 
     with pytest.raises(ValueError, match="protocol fingerprint"):
         StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+
+def test_v2_deepswe_manifest_loads_and_round_trips_fingerprint(tmp_path: Path) -> None:
+    data = study_data_v2({"name": "deepswe", "source": {"revision": "a" * 40}})
+
+    study = StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+    assert study.schema_version == 2
+    assert study.protocol.benchmark.name == "deepswe"
+    assert study.protocol.benchmark.source_revision == "a" * 40
+    assert study.protocol.benchmark.tiers is None
+    assert study.protocol_fingerprint() == data["protocol_fingerprint"]
+
+
+def test_v2_swe_polybench_manifest_loads_tiers_in_declaration_order(tmp_path: Path) -> None:
+    data = study_data_v2(
+        {"name": "swe-polybench", "source": {"revision": "a" * 40}, "tiers": ["high", "mid"]}
+    )
+
+    study = StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+    assert study.protocol.benchmark.name == "swe-polybench"
+    assert study.protocol.benchmark.tiers == ("high", "mid")
+    assert study.protocol_fingerprint() == data["protocol_fingerprint"]
+
+
+def test_v2_multi_swe_bench_manifest_loads_without_tiers(tmp_path: Path) -> None:
+    data = study_data_v2({"name": "multi-swe-bench", "source": {"revision": "a" * 40}})
+
+    study = StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+    assert study.protocol.benchmark.name == "multi-swe-bench"
+    assert study.protocol.benchmark.tiers is None
+    assert study.protocol_fingerprint() == data["protocol_fingerprint"]
+
+
+@pytest.mark.parametrize(
+    ("benchmark", "match"),
+    [
+        ({"name": "swe-bench", "source": {"revision": "a" * 40}}, "unknown benchmark"),
+        (
+            {"name": "swe-polybench", "source": {"revision": "a" * 40}, "tiers": []},
+            "tiers",
+        ),
+        (
+            {"name": "swe-polybench", "source": {"revision": "a" * 40}, "tiers": ["high", "epic"]},
+            "fit tier",
+        ),
+        (
+            {"name": "swe-polybench", "source": {"revision": "a" * 40}, "tiers": ["high", "high"]},
+            "unique",
+        ),
+        (
+            {"name": "deepswe", "source": {"revision": "a" * 40}, "tiers": ["high"]},
+            "tiers",
+        ),
+        (
+            {"name": "deepswe", "source": {"revision": "a" * 40}, "tiers": None},
+            "tiers",
+        ),
+        (
+            {"name": "multi-swe-bench", "source": {"revision": "a" * 40}, "tiers": ["high"]},
+            "tiers",
+        ),
+        ({"name": "deepswe", "source": {"revision": "main"}}, "immutable git sha"),
+    ],
+)
+def test_rejects_invalid_v2_benchmark_blocks(
+    tmp_path: Path, benchmark: dict, match: str
+) -> None:
+    data = study_data_v2(benchmark)
+
+    with pytest.raises(ValueError, match=match):
+        StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+
+def test_rejects_v2_manifest_with_top_level_deep_swe_sha(tmp_path: Path) -> None:
+    data = study_data_v2({"name": "deepswe", "source": {"revision": "a" * 40}})
+    data["protocol"]["deep_swe_sha"] = "a" * 40
+    data["protocol_fingerprint"] = fingerprint(data["protocol"])
+
+    with pytest.raises(ValueError, match="deep_swe_sha"):
+        StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+
+def test_rejects_v1_manifest_with_benchmark_block(tmp_path: Path) -> None:
+    data = study_data()
+    data["protocol"]["benchmark"] = {"name": "deepswe", "source": {"revision": "a" * 40}}
+    data["protocol_fingerprint"] = fingerprint(data["protocol"])
+
+    with pytest.raises(ValueError, match="benchmark"):
+        StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+
+def test_rejects_unsupported_schema_version(tmp_path: Path) -> None:
+    data = study_data()
+    data["schema_version"] = 3
+
+    with pytest.raises(ValueError, match="schema version"):
+        StudyManifest.load(write_study(tmp_path / "study.yaml", data))
+
+
+def study_data_v2(benchmark: dict) -> dict:
+    data = study_data()
+    data["schema_version"] = 2
+    del data["protocol"]["deep_swe_sha"]
+    data["protocol"]["benchmark"] = benchmark
+    data["protocol_fingerprint"] = fingerprint(data["protocol"])
+    return data
 
 
 def study_data() -> dict:

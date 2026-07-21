@@ -1,0 +1,19 @@
+{
+  "benchmark": "swe-polybench",
+  "fingerprint": "2b4e5a711c469875a99cc13d25c65aef02a7f92167d7032cd116e84debcebdb6",
+  "source_revision": "1234567890abcdef1234567890abcdef12345678",
+  "tasks": [
+    {
+      "checksum": "1111111111111111111111111111111111111111111111111111111111111111",
+      "language": "typescript",
+      "slug": "microsoft__vscode-12345",
+      "tier": "high"
+    },
+    {
+      "checksum": "2222222222222222222222222222222222222222222222222222222222222222",
+      "language": "typescript",
+      "slug": "coder__code-server-321",
+      "tier": "mid"
+    }
+  ]
+}

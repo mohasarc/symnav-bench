@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from dataclasses import asdict
 from datetime import timedelta
 from pathlib import Path
@@ -13,14 +14,21 @@ from symnav_bench import __version__
 from symnav_bench.build_identity import build_version_text
 from symnav_bench.batch_plan import BatchPlan, TrialSlot, plan_balanced_batches, plan_trial_slots
 from symnav_bench.cells.attempt import AttemptRecord
-from symnav_bench.deepswe import TASK_SLUGS, configured_tasks_dir, ensure_deepswe_tasks
+from symnav_bench.benchmark_sources import benchmark_task_source
+from symnav_bench.deepswe import TASK_SLUGS, configured_tasks_dir, default_deepswe_root
 from symnav_bench.run.auth import validate_auth
 from symnav_bench.run.config import RunConfig
-from symnav_bench.run.runner import CellRunner, subprocess_pier_run
+from symnav_bench.run.runner import CellRunner, StudyRunContext, subprocess_pier_run
 from symnav_bench.run.symnav_ref import resolve_symnav_ref
 from symnav_bench.run_spec import AgentSpec, parse_conditions
-from symnav_bench.study import StudyManifest, protocol_mapping
-from symnav_bench.suite import SuiteManifest, TaskManifestEntry, build_suite_manifest
+from symnav_bench.study import BenchmarkSelection, StudyManifest, protocol_mapping
+from symnav_bench.suite import (
+    SuiteManifest,
+    build_suite_manifest,
+    parse_suite_manifest,
+    serialize_suite_manifest,
+    suite_mapping,
+)
 from symnav_bench.tasks import list_tasks
 
 
@@ -36,6 +44,10 @@ def main(argv: list[str] | None = None) -> int:
             return report_command(args)
         if args.command == "plan-study":
             return plan_study_command(args)
+        if args.command == "study-metadata":
+            return study_metadata_command(args)
+        if args.command == "resolve-suite":
+            return resolve_suite_command(args)
         if args.command == "batch-matrix":
             return batch_matrix_command(args)
         if args.command == "merge-results":
@@ -85,6 +97,13 @@ def build_parser() -> argparse.ArgumentParser:
     plan_study_parser.add_argument("--study", type=Path, required=True)
     plan_study_parser.add_argument("--tasks-dir", type=Path, required=True)
     plan_study_parser.add_argument("--json", action="store_true")
+    study_metadata_parser = subcommands.add_parser("study-metadata")
+    study_metadata_parser.add_argument("--study", type=Path, required=True)
+    study_metadata_parser.add_argument("--suite", type=Path, required=True)
+    study_metadata_parser.add_argument("--configuration", required=True)
+    resolve_suite_parser = subcommands.add_parser("resolve-suite")
+    resolve_suite_parser.add_argument("--study", type=Path, required=True)
+    resolve_suite_parser.add_argument("--out", type=Path, required=True)
     batch_matrix_parser = subcommands.add_parser("batch-matrix")
     batch_matrix_parser.add_argument("--study", type=Path, required=True)
     batch_matrix_parser.add_argument("--suite", type=Path, required=True)
@@ -118,8 +137,16 @@ def run_command(args: argparse.Namespace) -> int:
     symnav_sha = resolve_symnav_ref(args.symnav_ref)
     specs = [AgentSpec.parse(value) for value in args.agent]
     validate_auth(specs, os.environ)
-    tasks_dir = args.tasks_dir or configured_tasks_dir() or ensure_deepswe_tasks(args.deep_swe_ref)
-    tasks = list_tasks(tasks_dir) if args.tasks == "all" else split_csv(args.tasks)
+    study_context = StudyRunContext.from_environment()
+    reject_adhoc_non_deepswe_suite(study_context)
+    if study_context is not None and study_context.benchmark.name != "deepswe":
+        tasks_dir = args.tasks_dir or Path(tempfile.mkdtemp(prefix="symnav-bench-tasks-"))
+        tasks = sorted(study_context.tasks) if args.tasks == "all" else split_csv(args.tasks)
+    else:
+        tasks_dir = (
+            args.tasks_dir or configured_tasks_dir() or acquire_deepswe_tasks_dir(args.deep_swe_ref)
+        )
+        tasks = list_tasks(tasks_dir) if args.tasks == "all" else split_csv(args.tasks)
     config = RunConfig(
         specs=specs,
         conditions=parse_conditions(args.conditions, symnav_sha),
@@ -138,8 +165,28 @@ def run_command(args: argparse.Namespace) -> int:
         image_version=os.environ.get("SYMNAV_BENCH_VERSION", __version__),
         deep_swe_ref=args.deep_swe_ref,
         symnav_ref=symnav_sha,
+        study_context=study_context,
     )
     return run_exit_code(runner.run_all())
+
+
+def reject_adhoc_non_deepswe_suite(study_context: StudyRunContext | None) -> None:
+    if study_context is not None:
+        return
+    suite_path = os.environ.get("SYMNAV_BENCH_SUITE_MANIFEST")
+    if not suite_path:
+        return
+    suite = parse_suite_manifest(json.loads(Path(suite_path).read_text(encoding="utf-8")))
+    if suite.benchmark != "deepswe":
+        raise ValueError(
+            f"benchmark {suite.benchmark!r} requires a declared study "
+            "(set SYMNAV_BENCH_STUDY_MANIFEST); ad-hoc runs support deepswe only"
+        )
+
+
+def acquire_deepswe_tasks_dir(deep_swe_ref: str) -> Path:
+    selection = BenchmarkSelection(name="deepswe", source_revision=deep_swe_ref, tiers=None)
+    return benchmark_task_source(selection).ensure_tasks_dir((), default_deepswe_root())
 
 
 def report_command(args: argparse.Namespace) -> int:
@@ -163,9 +210,40 @@ def report_study_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def study_metadata_command(args: argparse.Namespace) -> int:
+    study = StudyManifest.load(args.study)
+    suite = parse_suite_manifest(json.loads(args.suite.read_text(encoding="utf-8")))
+    configuration = next(
+        (item for item in study.configurations if item.id == args.configuration), None
+    )
+    if configuration is None:
+        raise ValueError(f"unknown configuration {args.configuration!r} in study {study.id}")
+    spec = configuration.spec
+    json.dump(
+        {
+            "agent_spec": f"{spec.agent}:{spec.model}:{spec.effort}",
+            "agent_version": configuration.agent_version,
+            "benchmark": study.protocol.benchmark.name,
+            "source_revision": study.protocol.benchmark.source_revision,
+            "symnav_sha": study.protocol.symnav.sha,
+            "protocol_fingerprint": study.protocol_fingerprint(),
+            "suite_fingerprint": suite.fingerprint,
+        },
+        sys.stdout,
+        indent=2,
+        sort_keys=True,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
 def plan_study_command(args: argparse.Namespace) -> int:
     study = StudyManifest.load(args.study)
-    suite = build_suite_manifest(args.tasks_dir, study.protocol.deep_swe_sha)
+    suite = build_suite_manifest(
+        args.tasks_dir,
+        study.protocol.benchmark.source_revision,
+        benchmark=study.protocol.benchmark.name,
+    )
     if args.json:
         write_study_plan(study, sys.stdout, suite=suite)
         return 0
@@ -177,17 +255,21 @@ def plan_study_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def resolve_suite_command(args: argparse.Namespace) -> int:
+    study = StudyManifest.load(args.study)
+    suite = benchmark_task_source(study.protocol.benchmark).resolve()
+    args.out.write_text(serialize_suite_manifest(suite), encoding="utf-8")
+    slots = plan_trial_slots(study, suite)
+    print(f"{study.id}: {len(suite.tasks)} tasks, {len(slots)} slots")
+    return 0
+
+
 def batch_matrix_command(args: argparse.Namespace) -> int:
     from symnav_bench.report.study_dataset import StudyDataset
     from symnav_bench.workflow import select_batches, write_github_matrix
 
     study = StudyManifest.load(args.study)
-    suite_data = json.loads(args.suite.read_text(encoding="utf-8"))
-    suite = SuiteManifest(
-        deep_swe_sha=suite_data["deep_swe_sha"],
-        tasks=tuple(TaskManifestEntry(**task) for task in suite_data["tasks"]),
-        fingerprint=suite_data["fingerprint"],
-    )
+    suite = parse_suite_manifest(json.loads(args.suite.read_text(encoding="utf-8")))
     existing = (
         StudyDataset.load(args.existing_study)
         if args.existing_study is not None and args.existing_study.exists()
@@ -314,12 +396,8 @@ def study_plan_mapping(
     return {
         "study_id": study.id,
         "protocol_fingerprint": study.protocol_fingerprint(),
-        "protocol": protocol_mapping(study.protocol),
-        "suite": {
-            "deep_swe_sha": suite.deep_swe_sha,
-            "fingerprint": suite.fingerprint,
-            "tasks": [asdict(task) for task in suite.tasks],
-        },
+        "protocol": protocol_mapping(study.protocol, study.schema_version),
+        "suite": suite_mapping(suite),
         "configurations": [
             {
                 "id": configuration.id,

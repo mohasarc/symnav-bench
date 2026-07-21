@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import uuid
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from time import sleep as real_sleep
 from typing import Callable
 
 from symnav_bench.batch_plan import TrialSlot, slot_id
+from symnav_bench.benchmark_sources import benchmark_task_source
 from symnav_bench.cell_identity import CellIdentity
 from symnav_bench.cells.attempt import AttemptIdentity, AttemptRecord
 from symnav_bench.cells.normalize import HarnessMeta, normalize_attempt
@@ -19,22 +21,36 @@ from symnav_bench.run.config import RunConfig
 from symnav_bench.run.job_config import HarnessIdentity, build_job_yaml
 from symnav_bench.run.limits import find_limit_marker
 from symnav_bench.agent_integrations import AgentIntegrationBundle, SymnavIntegrationCatalog
-from symnav_bench.study import AgentConfiguration, StudyManifest
-from symnav_bench.suite import TaskManifestEntry
+from symnav_bench.study import AgentConfiguration, BenchmarkSelection, StudyManifest
+from symnav_bench.suite import SuiteManifest, TaskManifestEntry, parse_suite_manifest
 
 
 PierRun = Callable[[Path, Path], None]
 Clock = Callable[[], datetime]
 Sleeper = Callable[[float], None]
+TasksMaterializer = Callable[[BenchmarkSelection, SuiteManifest, Sequence[str], Path], Path]
+
+
+def materialize_benchmark_tasks(
+    selection: BenchmarkSelection,
+    suite: SuiteManifest,
+    slugs: Sequence[str],
+    workdir: Path,
+) -> Path:
+    return benchmark_task_source(selection, suite=suite).ensure_tasks_dir(slugs, workdir)
 
 
 @dataclass(frozen=True)
 class StudyRunContext:
     configuration: AgentConfiguration
-    tasks: dict[str, TaskManifestEntry]
+    suite: SuiteManifest
     integration: AgentIntegrationBundle
     wall_clock_seconds: int
-    deep_swe_sha: str
+    benchmark: BenchmarkSelection
+
+    @property
+    def tasks(self) -> dict[str, TaskManifestEntry]:
+        return {task.slug: task for task in self.suite.tasks}
 
     @classmethod
     def from_environment(cls) -> "StudyRunContext | None":
@@ -48,17 +64,13 @@ class StudyRunContext:
         configuration = next(
             item for item in study.configurations if item.id == configuration_id
         )
-        suite_data = json.loads(Path(suite_path).read_text(encoding="utf-8"))
-        tasks = {
-            item["slug"]: TaskManifestEntry(**item)
-            for item in suite_data["tasks"]
-        }
+        suite = parse_suite_manifest(json.loads(Path(suite_path).read_text(encoding="utf-8")))
         return cls(
             configuration=configuration,
-            tasks=tasks,
+            suite=suite,
             integration=SymnavIntegrationCatalog.load(Path(symnav_checkout)).bundle("full"),
             wall_clock_seconds=study.protocol.wall_clock_seconds,
-            deep_swe_sha=study.protocol.deep_swe_sha,
+            benchmark=study.protocol.benchmark,
         )
 
 
@@ -71,6 +83,7 @@ class CellRunner:
         clock: Clock | None = None,
         sleeper: Sleeper | None = None,
         study_context: StudyRunContext | None = None,
+        materializer: TasksMaterializer | None = None,
     ) -> None:
         self.config = config
         self.harness = harness
@@ -78,6 +91,8 @@ class CellRunner:
         self.clock = clock or (lambda: datetime.now(UTC))
         self.sleep = sleeper or real_sleep
         self.study_context = study_context
+        self.materializer = materializer or materialize_benchmark_tasks
+        self.materialized_tasks_dir: Path | None = None
 
     @classmethod
     def from_environment(
@@ -87,6 +102,7 @@ class CellRunner:
         image_version: str,
         deep_swe_ref: str,
         symnav_ref: str | None,
+        study_context: StudyRunContext | None = None,
     ) -> "CellRunner":
         return cls(
             config=config,
@@ -97,7 +113,7 @@ class CellRunner:
                 symnav_ref=symnav_ref,
             ),
             pier=pier,
-            study_context=StudyRunContext.from_environment(),
+            study_context=study_context or StudyRunContext.from_environment(),
         )
 
     def run_all(self) -> list[AttemptRecord]:
@@ -114,7 +130,7 @@ class CellRunner:
                 configuration,
                 condition,
                 task,
-                self.config.tasks_dir,
+                self.resolve_tasks_dir(),
                 self.study_context.integration if self.study_context else None,
                 self.study_context.wall_clock_seconds if self.study_context else None,
             ),
@@ -136,6 +152,19 @@ class CellRunner:
             pier_error,
             self.config.results_dir,
         )
+
+    def resolve_tasks_dir(self) -> Path:
+        context = self.study_context
+        if context is None or context.benchmark.name == "deepswe":
+            return self.config.tasks_dir
+        if self.materialized_tasks_dir is None:
+            self.materialized_tasks_dir = self.materializer(
+                context.benchmark,
+                context.suite,
+                list(self.config.tasks),
+                self.config.tasks_dir,
+            )
+        return self.materialized_tasks_dir
 
     def _slot(self, identity: CellIdentity, condition_kind: str, variant: str) -> TrialSlot:
         condition = condition_kind if condition_kind == "stock" or variant == "all" else variant
@@ -163,21 +192,25 @@ class CellRunner:
             return self.harness
         context = self.study_context
         treatment = identity.condition_label != "stock"
+        task = context.tasks[identity.task] if context else None
         return HarnessIdentity(
             image_reference=self.harness.image_version,
             image_digest=os.environ.get("SYMNAV_BENCH_IMAGE_DIGEST", "unknown"),
             symnav_bench_sha=os.environ.get("SYMNAV_BENCH_SHA", self.harness.image_version),
             pier_version=self.harness.pier_version,
-            deep_swe_sha=context.deep_swe_sha if context else self.harness.deep_swe_ref,
+            deep_swe_sha=context.benchmark.source_revision if context else self.harness.deep_swe_ref,
             symnav_sha=self.harness.symnav_ref,
             agent_name=identity.spec.agent,
             agent_version=context.configuration.agent_version if context else os.environ.get(f"{identity.spec.agent.upper()}_VERSION", "unknown"),
             bundle_id=context.integration.id if context and treatment else None,
             bundle_hash=context.integration.content_hash if context and treatment else None,
-            task_checksum=context.tasks[identity.task].checksum if context else "unknown",
+            task_checksum=task.checksum if task else "unknown",
             prompt_rule_hash="unknown",
             requested_model=identity.spec.model,
             requested_effort=identity.spec.effort,
+            benchmark=context.benchmark.name if context else "deepswe",
+            benchmark_source_revision=context.benchmark.source_revision if context else "",
+            task_fit_tier=task.tier if task else None,
         )
 
 

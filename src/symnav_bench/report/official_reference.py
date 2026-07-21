@@ -36,6 +36,11 @@ def import_official_reference(
     expected_sha256: str,
     suite: SuiteManifest,
 ) -> OfficialReferenceSnapshot:
+    if suite.benchmark != "deepswe":
+        raise ValueError(
+            "official reference scores exist only for deepswe; "
+            f"suite benchmark is {suite.benchmark}"
+        )
     content = source.read_bytes()
     actual_sha256 = hashlib.sha256(content).hexdigest()
     if actual_sha256 != expected_sha256:

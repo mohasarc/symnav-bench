@@ -1,0 +1,45 @@
+yarn run v1.3.2
+$ cross-env NODE_ENV=test mocha test/integration/MenuList.spec.js --reporter /testbed/custom-reporter.js --exit
+{
+  "stats": {
+    "suites": 2,
+    "tests": 3,
+    "passes": 2,
+    "pending": 0,
+    "failures": 1,
+    "start": "2025-02-04T03:14:48.067Z",
+    "end": "2025-02-04T03:14:49.413Z",
+    "duration": 1346
+  },
+  "tests": [
+    {
+      "title": "should focus the third item",
+      "file": "test/integration/MenuList.spec.js",
+      "suite": "keyboard controls and tabIndex manipulation",
+      "fullTitle": "<MenuList> integration keyboard controls and tabIndex manipulation should focus the third item",
+      "functionName": "anonymous",
+      "status": "passed",
+      "duration": 121
+    },
+    {
+      "title": "should have the first item tabIndexed",
+      "file": "test/integration/MenuList.spec.js",
+      "suite": "keyboard controls and tabIndex manipulation",
+      "fullTitle": "<MenuList> integration keyboard controls and tabIndex manipulation should have the first item tabIndexed",
+      "functionName": "anonymous",
+      "status": "passed",
+      "duration": 18
+    },
+    {
+      "title": "should select/focus the second item",
+      "file": "test/integration/MenuList.spec.js",
+      "suite": "keyboard controls and tabIndex manipulation - preselected item",
+      "fullTitle": "<MenuList> integration keyboard controls and tabIndex manipulation - preselected item should select/focus the second item",
+      "functionName": "anonymous",
+      "status": "failed",
+      "duration": 33
+    }
+  ],
+  "failures": []
+}
+Container exited with status code: 1

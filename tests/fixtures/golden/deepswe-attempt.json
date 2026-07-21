@@ -1,0 +1,61 @@
+{
+  "adoption": {
+    "command_counts": {},
+    "first_symnav_step": null,
+    "patch_calls": 0,
+    "read_calls": 0,
+    "read_symnav_skill": false,
+    "search_calls": 0,
+    "symnav_calls": 0,
+    "symnav_calls_per_agent_step": 0.0,
+    "symnav_failures": 0,
+    "symnav_timeouts": 0,
+    "used_symnav": false
+  },
+  "agent_version": null,
+  "artifact": null,
+  "command_counts": {},
+  "disposition": {
+    "detail": null,
+    "outcome": "passed",
+    "retry_reason": null,
+    "scored_failure_reason": null
+  },
+  "exception": null,
+  "harness": {
+    "agent_name": "codex",
+    "agent_version": "0.31.0",
+    "bundle_hash": null,
+    "bundle_id": null,
+    "deep_swe_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "image_digest": "sha256:image",
+    "image_reference": "image",
+    "pier_version": "0.3.0",
+    "prompt_rule_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "requested_effort": "medium",
+    "requested_model": "model",
+    "symnav_bench_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "symnav_sha": null,
+    "task_checksum": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "identity": {
+    "attempt_id": "attempt-1",
+    "github_job": null,
+    "github_run_attempt": null,
+    "github_run_id": null,
+    "slot_id": "slot-1"
+  },
+  "rewards": {},
+  "schema_version": 3,
+  "slot": {
+    "condition": "stock",
+    "configuration_id": "configuration",
+    "repetition": 1,
+    "slot_id": "slot-1",
+    "study_id": "study",
+    "task": "task"
+  },
+  "timing": {},
+  "usage": {},
+  "written_at": "2026-01-01T00:00:01+00:00"
+}

@@ -75,6 +75,22 @@ def test_requires_exact_suite_task_set(tmp_path: Path) -> None:
         import_official_reference(source, expected_sha256=checksum, suite=suite())
 
 
+def test_official_reference_is_deepswe_only(tmp_path: Path) -> None:
+    source, checksum = write_snapshot(tmp_path / "official.json")
+    polybench_suite = SuiteManifest(
+        benchmark="swe-polybench",
+        source_revision="a" * 40,
+        tasks=(
+            TaskManifestEntry("alpha", "typescript", "1" * 64, tier="high"),
+            TaskManifestEntry("beta", "typescript", "2" * 64, tier="mid"),
+        ),
+        fingerprint="3" * 64,
+    )
+
+    with pytest.raises(ValueError, match="deepswe"):
+        import_official_reference(source, expected_sha256=checksum, suite=polybench_suite)
+
+
 def test_matches_external_rows_by_model_and_effort(tmp_path: Path) -> None:
     source, checksum = write_snapshot(tmp_path / "official.json")
     snapshot = import_official_reference(
@@ -110,7 +126,8 @@ def test_external_reference_cannot_be_used_as_stock(tmp_path: Path) -> None:
 
 def suite() -> SuiteManifest:
     return SuiteManifest(
-        deep_swe_sha="a" * 40,
+        benchmark="deepswe",
+        source_revision="a" * 40,
         tasks=(
             TaskManifestEntry("alpha", "typescript", "1" * 64),
             TaskManifestEntry("beta", "typescript", "2" * 64),

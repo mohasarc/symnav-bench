@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from symnav_bench.batch_plan import TrialSlot
@@ -14,6 +17,52 @@ from symnav_bench.cells.attempt import (
 )
 from symnav_bench.cells.trajectory import AdoptionSummary
 from symnav_bench.run.job_config import HarnessIdentity
+
+
+GOLDEN_FIXTURES = Path(__file__).parent / "fixtures" / "golden"
+
+
+def test_deepswe_attempt_serializes_byte_identically_to_golden() -> None:
+    attempt = _attempt(_slot(), "attempt-1", "passed")
+
+    serialized = json.dumps(attempt.to_json(), indent=2, sort_keys=True) + "\n"
+
+    assert serialized.encode() == (GOLDEN_FIXTURES / "deepswe-attempt.json").read_bytes()
+
+
+def test_load_defaults_legacy_harness_to_deepswe_provenance(tmp_path) -> None:
+    attempt = _attempt(_slot(), "attempt-1", "passed")
+    value = attempt.to_json()
+    assert "benchmark" not in value["harness"]
+    path = tmp_path / "attempt.json"
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+    loaded = AttemptRecord.load(path)
+
+    assert loaded.harness.benchmark == "deepswe"
+    assert loaded.harness.benchmark_source_revision == "b" * 40
+    assert loaded.harness.task_fit_tier is None
+
+
+def test_load_round_trips_benchmark_provenance(tmp_path) -> None:
+    attempt = _attempt(_slot(), "attempt-1", "passed")
+    value = attempt.to_json()
+    value["harness"].update(
+        {
+            "benchmark": "swe-polybench",
+            "benchmark_source_revision": "e" * 40,
+            "task_fit_tier": "high",
+        }
+    )
+    path = tmp_path / "attempt.json"
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+    loaded = AttemptRecord.load(path)
+
+    assert loaded.harness.benchmark == "swe-polybench"
+    assert loaded.harness.benchmark_source_revision == "e" * 40
+    assert loaded.harness.task_fit_tier == "high"
+    assert loaded.to_json()["harness"] == value["harness"]
 
 
 def test_binary_verifier_reward_defines_pass_or_failure() -> None:
