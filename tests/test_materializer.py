@@ -264,3 +264,27 @@ def test_pre_artifacts_diffs_against_pre_agent_baseline(tmp_path: Path) -> None:
     assert "agent fix" in patch
     assert "brand-new.txt" in patch
     assert "Dockerfile" not in patch
+
+
+def test_verifier_environment_grants_internet_when_requested(tmp_path: Path) -> None:
+    data = read_task_toml(
+        write_task(tmp_path, verifier_allow_internet=True, verifier_timeout_sec=3600.0)
+    )
+
+    verifier = data["verifier"]
+    assert isinstance(verifier, dict)
+    assert verifier["timeout_sec"] == 3600.0
+    verifier_environment = verifier["environment"]
+    assert isinstance(verifier_environment, dict)
+    assert verifier_environment["allow_internet"] is True
+    assert "docker_image" not in verifier_environment
+    assert verifier_environment["workdir"] == "/testbed"
+
+
+def test_default_layout_has_no_verifier_environment(tmp_path: Path) -> None:
+    data = read_task_toml(write_task(tmp_path))
+
+    verifier = data["verifier"]
+    assert isinstance(verifier, dict)
+    assert "environment" not in verifier
+    assert verifier["timeout_sec"] == 1800.0
