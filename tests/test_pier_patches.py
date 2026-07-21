@@ -72,3 +72,18 @@ def test_installed_pier_module_carries_the_expected_snippet() -> None:
 def test_dockerfile_applies_the_patch() -> None:
     dockerfile = (Path(__file__).parents[1] / "Dockerfile").read_text(encoding="utf-8")
     assert "patch_codex_nvm_install" in dockerfile
+
+
+def test_runtime_nvm_sourcing_pins_nvm_dir(tmp_path: Path) -> None:
+    module = write_codex_module(
+        tmp_path,
+        UNPATCHED_SNIPPET
+        + '\nCHECK = "if [ -s ~/.nvm/nvm.sh ]; then . ~/.nvm/nvm.sh; fi; codex --version"\n'
+        + 'PREFIX = "if [ -s ~/.nvm/nvm.sh ]; then . ~/.nvm/nvm.sh; fi; "\n',
+    )
+
+    patch_codex_nvm_install(module)
+
+    patched = module.read_text(encoding="utf-8")
+    assert ". ~/.nvm/nvm.sh; fi" not in patched
+    assert patched.count('NVM_DIR="$HOME/.nvm" . ~/.nvm/nvm.sh; fi') == 2
