@@ -20,6 +20,8 @@ class MaterializedTaskSpec:
     log_parser: str
     grade_script: str
     wall_clock_seconds: int | None = None
+    verifier_allow_internet: bool = False
+    verifier_timeout_sec: float = 1800.0
 
 
 def write_pier_task_dir(spec: MaterializedTaskSpec, dest: Path) -> Path:
@@ -60,6 +62,20 @@ def task_toml(spec: MaterializedTaskSpec) -> str:
         if spec.wall_clock_seconds is None
         else f"\n[agent]\ntimeout_sec = {float(spec.wall_clock_seconds)}\n"
     )
+    verifier_environment_section = (
+        ""
+        if not spec.verifier_allow_internet
+        else (
+            "\n[verifier.environment]\n"
+            "build_timeout_sec = 1800.0\n"
+            'os = "linux"\n'
+            "cpus = 2\n"
+            "memory_mb = 8192\n"
+            "storage_mb = 20480\n"
+            "allow_internet = true\n"
+            f"workdir = {toml_string(spec.workdir)}\n"
+        )
+    )
     return (
         'schema_version = "1.1"\n'
         'artifacts = ["/logs/artifacts/model.patch"]\n'
@@ -76,7 +92,8 @@ def task_toml(spec: MaterializedTaskSpec) -> str:
         "\n"
         "[verifier]\n"
         'environment_mode = "separate"\n'
-        "timeout_sec = 1800.0\n"
+        f"timeout_sec = {spec.verifier_timeout_sec}\n"
+        f"{verifier_environment_section}"
         f"{agent_section}"
         "\n"
         "[environment]\n"

@@ -284,6 +284,8 @@ def materialize_instance(
         test_command=instance.test_command,
         log_parser=log_parser_for(instance),
         grade_script=grade_script_source(),
+        verifier_allow_internet=True,
+        verifier_timeout_sec=3600.0,
     )
     return write_pier_task_dir(spec, task_dir)
 
