@@ -603,3 +603,41 @@ def _integration_bundle(tmp_path):
         claude_hook=hook,
         content_hash="bundle-hash",
     )
+
+
+def test_job_config_threads_task_workdir_to_agent(tmp_path) -> None:
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    (task_dir / "task.toml").write_text(
+        '[environment]\nworkdir = "/testbed"\n', encoding="utf-8"
+    )
+
+    config = yaml.safe_load(
+        build_job_yaml(
+            AgentSpec("codex", "m", "e"),
+            Condition("symnav", "c" * 40),
+            "task",
+            tmp_path,
+        )
+    )
+
+    assert config["agents"][0]["kwargs"]["workdir"] == "/testbed"
+
+
+def test_job_config_omits_workdir_for_deepswe_layout(tmp_path) -> None:
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    (task_dir / "task.toml").write_text(
+        '[environment]\nworkdir = "/app"\n', encoding="utf-8"
+    )
+
+    config = yaml.safe_load(
+        build_job_yaml(
+            AgentSpec("codex", "m", "e"),
+            Condition("symnav", "c" * 40),
+            "task",
+            tmp_path,
+        )
+    )
+
+    assert "workdir" not in config["agents"][0]["kwargs"]
