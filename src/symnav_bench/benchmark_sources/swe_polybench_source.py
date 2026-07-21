@@ -15,7 +15,12 @@ from symnav_bench.benchmark_sources.pier_task_writer import (
     MaterializedTaskSpec,
     write_pier_task_dir,
 )
-from symnav_bench.container_registry import resolve_ghcr_image_digest
+from symnav_bench.container_registry import (
+    GHCR_HOST,
+    GHCR_TOKEN_URL,
+    RegistryDigestResolver,
+    resolve_ghcr_image_digest,
+)
 from symnav_bench.dataset_fetch import fetch_dataset_files, list_dataset_files
 from symnav_bench.study import BenchmarkSelection, FitTier
 from symnav_bench.suite import (
@@ -30,7 +35,6 @@ DATASET_REPO_ID = "AmazonScience/SWE-PolyBench"
 TYPESCRIPT_LANGUAGE = "TypeScript"
 HIGH_TIER_MODIFIED_NODES = 6
 HIGH_TIER_DECLARATION_CHANGES = 4
-POLYBENCH_WORKDIR = "/testbed"
 EVAL_IMAGE_REGISTRY = "ghcr.io"
 EVAL_IMAGE_TAG = "latest"
 
@@ -79,6 +83,7 @@ def fit_tier(shape: PolybenchChangeShape) -> FitTier:
 
 RowLoader = Callable[[str], Iterable[dict[str, Any]]]
 ImageResolver = Callable[[str], str | None]
+WorkdirResolver = Callable[[str], str]
 
 
 class SwePolybenchTaskSource(BenchmarkTaskSource):
@@ -88,11 +93,19 @@ class SwePolybenchTaskSource(BenchmarkTaskSource):
         load_rows: RowLoader | None = None,
         resolve_image: ImageResolver | None = None,
         suite: SuiteManifest | None = None,
+        resolve_workdir: WorkdirResolver | None = None,
     ) -> None:
         super().__init__(selection)
         self.load_rows = load_rows
         self.resolve_image = resolve_image
         self.suite = suite
+        self.resolve_workdir = resolve_workdir
+
+    def workdir_resolver(self) -> WorkdirResolver:
+        if self.resolve_workdir is not None:
+            return self.resolve_workdir
+        registry = RegistryDigestResolver(GHCR_TOKEN_URL, GHCR_HOST)
+        return lambda image: ghcr_image_working_dir(image, registry)
 
     def resolve(self) -> SuiteManifest:
         if not self.selection.tiers:
@@ -120,8 +133,13 @@ class SwePolybenchTaskSource(BenchmarkTaskSource):
                 "swe-polybench tier selection matched no tasks with published "
                 "eval images"
             )
+        resolve_workdir = self.workdir_resolver()
         tasks = tuple(
-            resolved_task_entry(instance, require_image(images, instance.instance_id))
+            resolved_task_entry(
+                instance,
+                require_image(images, instance.instance_id),
+                resolve_workdir,
+            )
             for instance in available
         )
         return SuiteManifest(
@@ -155,7 +173,12 @@ class SwePolybenchTaskSource(BenchmarkTaskSource):
             image = self.image_resolver()(slug)
             if image is None:
                 raise ValueError(f"eval image for task {slug!r} is no longer published")
-            task_dir = materialize_instance(instance, image, workdir / slug)
+            task_dir = materialize_instance(
+                instance,
+                image,
+                workdir / slug,
+                image_working_dir(instance, image, self.workdir_resolver()),
+            )
             if directory_checksum(task_dir) != declared[slug].checksum:
                 raise ValueError(
                     f"materialized task {slug!r} does not match the declared suite "
@@ -224,15 +247,36 @@ def log_parser_for(instance: PolybenchInstance) -> str:
     return parser
 
 
+def ghcr_image_working_dir(image: str, registry: RegistryDigestResolver) -> str:
+    reference = image.removeprefix(f"{EVAL_IMAGE_REGISTRY}/")
+    repository, _, digest = reference.partition("@")
+    return registry.image_working_dir(repository, digest)
+
+
+def image_working_dir(
+    instance: PolybenchInstance, image: str, resolve_workdir: WorkdirResolver
+) -> str:
+    working_dir = resolve_workdir(image)
+    if not working_dir:
+        raise ValueError(
+            f"swe-polybench instance {instance.instance_id!r}: eval image "
+            f"{image!r} declares no working dir"
+        )
+    return working_dir
+
+
 def materialize_instance(
-    instance: PolybenchInstance, docker_image: str, task_dir: Path
+    instance: PolybenchInstance,
+    docker_image: str,
+    task_dir: Path,
+    working_dir: str,
 ) -> Path:
     spec = MaterializedTaskSpec(
         benchmark="swe-polybench",
         slug=instance.instance_id,
         instruction=instance.problem_statement,
         docker_image=docker_image,
-        workdir=POLYBENCH_WORKDIR,
+        workdir=working_dir,
         base_commit=instance.base_commit,
         test_patch=instance.test_patch,
         f2p=instance.f2p,
@@ -244,10 +288,15 @@ def materialize_instance(
     return write_pier_task_dir(spec, task_dir)
 
 
-def resolved_task_entry(instance: PolybenchInstance, image: str) -> TaskManifestEntry:
+def resolved_task_entry(
+    instance: PolybenchInstance, image: str, resolve_workdir: WorkdirResolver
+) -> TaskManifestEntry:
     with tempfile.TemporaryDirectory(prefix="swe-polybench-resolve-") as scratch:
         task_dir = materialize_instance(
-            instance, image, Path(scratch) / instance.instance_id
+            instance,
+            image,
+            Path(scratch) / instance.instance_id,
+            image_working_dir(instance, image, resolve_workdir),
         )
         checksum = directory_checksum(task_dir)
     return TaskManifestEntry(

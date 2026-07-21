@@ -89,6 +89,32 @@ class RegistryDigestResolver:
             raise ValueError(f"registry returned no digest for {repository}:{tag}")
         return digest
 
+    def image_working_dir(self, repository: str, reference: str) -> str:
+        manifest = self.fetch_json(
+            repository, f"/manifests/{reference}", accept=MANIFEST_ACCEPT
+        )
+        if "manifests" in manifest:
+            amd64 = next(
+                entry
+                for entry in manifest["manifests"]
+                if entry.get("platform", {}).get("architecture") == "amd64"
+            )
+            manifest = self.fetch_json(
+                repository, f"/manifests/{amd64['digest']}", accept=MANIFEST_ACCEPT
+            )
+        config_digest = manifest["config"]["digest"]
+        config = self.fetch_json(repository, f"/blobs/{config_digest}")
+        return config.get("config", {}).get("WorkingDir", "")
+
+    def fetch_json(
+        self, repository: str, path: str, accept: str = "application/json"
+    ) -> dict:
+        token = self.pull_token(repository)
+        url = f"{self.registry_host}/v2/{repository}{path}"
+        headers = {"Authorization": f"Bearer {token}", "Accept": accept}
+        with self.opener(url, headers) as response:
+            return json.loads(response.read())
+
     def pull_token(self, repository: str) -> str:
         cached = self.pull_tokens.get(repository)
         if cached is not None:

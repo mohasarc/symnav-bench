@@ -215,7 +215,10 @@ def polybench_source(
         name="swe-polybench", source_revision=POLYBENCH_REVISION, tiers=tiers
     )
     return SwePolybenchTaskSource(
-        selection, load_rows=lambda revision: rows, resolve_image=pinned_image
+        selection,
+        load_rows=lambda revision: rows,
+        resolve_image=pinned_image,
+        resolve_workdir=lambda image: "/testbed",
     )
 
 
@@ -291,7 +294,10 @@ def test_resolve_passes_pinned_revision_to_loader() -> None:
         name="swe-polybench", source_revision=POLYBENCH_REVISION, tiers=("high",)
     )
     SwePolybenchTaskSource(
-        selection, load_rows=load_rows, resolve_image=pinned_image
+        selection,
+        load_rows=load_rows,
+        resolve_image=pinned_image,
+        resolve_workdir=lambda image: "/testbed",
     ).resolve()
 
     assert revisions == [POLYBENCH_REVISION]
@@ -353,6 +359,11 @@ def test_resolve_suite_cli_writes_identical_polybench_suites_across_runs(
         swe_polybench_source, "load_dataset_rows", lambda revision: tiered_rows()
     )
     monkeypatch.setattr(swe_polybench_source, "resolve_eval_image", pinned_image)
+    monkeypatch.setattr(
+        swe_polybench_source,
+        "ghcr_image_working_dir",
+        lambda image, registry: "/testbed",
+    )
     manifest = write_manifest(tmp_path / "manifest.yml", polybench_manifest_data())
     first_out = tmp_path / "first-suite.json"
     second_out = tmp_path / "second-suite.json"
