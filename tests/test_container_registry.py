@@ -209,3 +209,58 @@ def test_manifest_digest_is_probed_with_head_request() -> None:
 
     assert digest == DIGEST
     assert methods == ["GET", "HEAD"]
+
+
+def image_config_opener(
+    requests: list[tuple[str, dict[str, str]]],
+    working_dir: str = "/repo",
+):
+    config_digest = "sha256:" + "c" * 64
+    amd64_digest = "sha256:" + "e" * 64
+
+    def opener(url: str, headers: dict[str, str], method: str = "GET") -> FakeResponse:
+        requests.append((url, headers))
+        if "/token?" in url:
+            return FakeResponse(json.dumps({"token": "anonymous-token"}).encode())
+        if url.endswith("/blobs/" + config_digest):
+            return FakeResponse(
+                json.dumps({"config": {"WorkingDir": working_dir}}).encode()
+            )
+        if url.endswith("/manifests/latest"):
+            return FakeResponse(
+                json.dumps(
+                    {
+                        "manifests": [
+                            {
+                                "digest": amd64_digest,
+                                "platform": {"architecture": "amd64", "os": "linux"},
+                            }
+                        ]
+                    }
+                ).encode()
+            )
+        return FakeResponse(
+            json.dumps({"config": {"digest": config_digest}}).encode()
+        )
+
+    return opener
+
+
+def test_image_working_dir_follows_index_to_amd64_config() -> None:
+    requests: list[tuple[str, dict[str, str]]] = []
+    resolver = docker_hub_digest_resolver(opener=image_config_opener(requests))
+
+    working_dir = resolver.image_working_dir(DOCKER_HUB_REPOSITORY, "latest")
+
+    assert working_dir == "/repo"
+    manifest_urls = [url for url, _ in requests if "/manifests/" in url]
+    assert manifest_urls[0].endswith("/manifests/latest")
+    assert manifest_urls[1].endswith("/manifests/sha256:" + "e" * 64)
+
+
+def test_image_working_dir_empty_when_config_omits_it() -> None:
+    resolver = docker_hub_digest_resolver(
+        opener=image_config_opener([], working_dir="")
+    )
+
+    assert resolver.image_working_dir(DOCKER_HUB_REPOSITORY, "latest") == ""
