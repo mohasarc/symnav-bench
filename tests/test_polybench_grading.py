@@ -395,3 +395,37 @@ def test_prepare_without_patch_tool_still_scores_apply_failure(tmp_path: Path) -
     reward = json.loads((tmp_path / "verifier" / "reward.json").read_text())
     assert reward["reward"] == 0
     assert reward["apply_failed"] == 1
+
+
+def test_agent_edits_to_test_files_lose_to_the_test_patch(tmp_path: Path) -> None:
+    repo = tmp_path / "app"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "config", "user.email", "test@example.com")
+    git(repo, "config", "user.name", "test")
+    (repo / "source.txt").write_text("original\n", encoding="utf-8")
+    (repo / "tests.txt").write_text("old tests\n", encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "base")
+    base_commit = git(repo, "rev-parse", "HEAD").strip()
+
+    (repo / "tests.txt").write_text("hidden tests\n", encoding="utf-8")
+    test_patch = git(repo, "diff")
+    git(repo, "reset", "-q", "--hard", base_commit)
+
+    (repo / "source.txt").write_text("fixed\n", encoding="utf-8")
+    (repo / "tests.txt").write_text("agent-tampered tests\n", encoding="utf-8")
+    model_patch = git(repo, "diff")
+    git(repo, "reset", "-q", "--hard", base_commit)
+
+    env = grading_dirs(tmp_path, grading_config(base_commit=base_commit), run_log=None)
+    (Path(env["TESTS_DIR"]) / "test.patch").write_text(test_patch, encoding="utf-8")
+    artifacts = Path(env["ARTIFACTS_DIR"])
+    artifacts.mkdir()
+    (artifacts / "model.patch").write_text(model_patch, encoding="utf-8")
+
+    run_grade_script(env, "prepare")
+
+    assert not (tmp_path / "verifier" / "reward.json").exists()
+    assert (repo / "source.txt").read_text(encoding="utf-8") == "fixed\n"
+    assert (repo / "tests.txt").read_text(encoding="utf-8") == "hidden tests\n"
