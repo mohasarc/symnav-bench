@@ -471,7 +471,11 @@ def test_materialized_task_carries_instance_content(tmp_path: Path) -> None:
     grade = (task_dir / "tests" / "grade.py").read_text(encoding="utf-8")
     assert grade == grade_script_source()
     task_toml = (task_dir / "task.toml").read_text(encoding="utf-8")
-    assert pinned_image("b-high") in task_toml
+    assert "docker_image" not in task_toml
+    environment_dockerfile = (task_dir / "environment" / "Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    assert pinned_image("b-high") in environment_dockerfile
 
 
 def test_resolve_excludes_instances_without_eval_images(

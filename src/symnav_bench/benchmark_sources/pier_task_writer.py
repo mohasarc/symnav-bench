@@ -81,7 +81,6 @@ def task_toml(spec: MaterializedTaskSpec) -> str:
         "\n"
         "[environment]\n"
         "build_timeout_sec = 1800.0\n"
-        f"docker_image = {toml_string(spec.docker_image)}\n"
         'os = "linux"\n'
         "cpus = 2\n"
         "memory_mb = 8192\n"
