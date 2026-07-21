@@ -582,3 +582,15 @@ def test_image_without_working_dir_is_a_hard_error() -> None:
         materializing_source(
             tiered_rows(), resolve_workdir=lambda image: ""
         ).resolve()
+
+
+def test_polybench_verifier_gets_internet_and_long_timeout(tmp_path: Path) -> None:
+    suite = materializing_source(tiered_rows()).resolve()
+    source = materializing_source(tiered_rows(), suite=suite)
+
+    task_dir = source.ensure_tasks_dir(["b-high"], tmp_path) / "b-high"
+
+    task_toml = (task_dir / "task.toml").read_text(encoding="utf-8")
+    assert "[verifier.environment]" in task_toml
+    assert "allow_internet = true" in task_toml
+    assert "timeout_sec = 3600.0" in task_toml
