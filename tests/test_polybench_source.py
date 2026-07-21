@@ -413,6 +413,7 @@ def materializing_source(
     tiers: tuple[str, ...] = ("high", "mid"),
     resolve_image=pinned_image,
     suite=None,
+    resolve_workdir=lambda image: "/testbed",
 ) -> SwePolybenchTaskSource:
     selection = BenchmarkSelection(
         name="swe-polybench", source_revision=POLYBENCH_REVISION, tiers=tiers
@@ -422,6 +423,7 @@ def materializing_source(
         load_rows=lambda revision: rows,
         resolve_image=resolve_image,
         suite=suite,
+        resolve_workdir=resolve_workdir,
     )
 
 
@@ -546,3 +548,26 @@ def test_ensure_tasks_dir_rejects_checksum_drift(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="b-high"):
         source.ensure_tasks_dir(["b-high"], tmp_path)
+
+
+def test_materialized_workdir_comes_from_the_eval_image(tmp_path: Path) -> None:
+    suite = materializing_source(
+        tiered_rows(), resolve_workdir=lambda image: "/repo"
+    ).resolve()
+    source = materializing_source(
+        tiered_rows(), suite=suite, resolve_workdir=lambda image: "/repo"
+    )
+
+    task_dir = source.ensure_tasks_dir(["b-high"], tmp_path) / "b-high"
+
+    task_toml = (task_dir / "task.toml").read_text(encoding="utf-8")
+    assert 'workdir = "/repo"' in task_toml
+    run_tests = (task_dir / "tests" / "run_tests.sh").read_text(encoding="utf-8")
+    assert "cd /repo" in run_tests
+
+
+def test_image_without_working_dir_is_a_hard_error() -> None:
+    with pytest.raises(ValueError, match="working dir"):
+        materializing_source(
+            tiered_rows(), resolve_workdir=lambda image: ""
+        ).resolve()
