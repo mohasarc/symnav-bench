@@ -28,7 +28,8 @@ PATCHED_APT_INSTALL = (
     " -e 's|http://security.debian.org/debian-security|http://archive.debian.org/debian-security|g'"
     " -e '/-updates/d' /etc/apt/sources.list"
     " && apt-get -o Acquire::Check-Valid-Until=false update; })"
-    " && apt-get install -y curl ripgrep;"
+    " && apt-get install -y curl"
+    " && { apt-get install -y ripgrep || echo 'ripgrep unavailable' >&2; };"
 )
 
 

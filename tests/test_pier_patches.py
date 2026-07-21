@@ -112,4 +112,5 @@ def test_apt_install_falls_back_to_archive_mirrors(tmp_path: Path) -> None:
     compile(patched, str(module), "exec")
     assert "archive.debian.org" in patched
     assert "apt-get update && apt-get install -y curl ripgrep;" not in patched
-    assert patched.count("apt-get install -y curl ripgrep") == 1
+    assert "apt-get install -y curl &&" in patched
+    assert "apt-get install -y ripgrep ||" in patched
