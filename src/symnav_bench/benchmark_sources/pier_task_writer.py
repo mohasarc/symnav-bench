@@ -97,9 +97,19 @@ def pre_artifacts_script(spec: MaterializedTaskSpec) -> str:
         f"cd {spec.workdir} || exit 0\n"
         "mkdir -p /logs/artifacts\n"
         f"git config --global --add safe.directory {spec.workdir} 2>/dev/null || true\n"
-        "git add -N . 2>/dev/null || true\n"
-        f"git diff --binary {spec.base_commit} > /logs/artifacts/model.patch"
-        " 2>/dev/null || true\n"
+        "current_index=$(mktemp)\n"
+        'cp "$(git rev-parse --git-path index)" "$current_index" 2>/dev/null || true\n'
+        'GIT_INDEX_FILE="$current_index" git add -A 2>/dev/null || true\n'
+        'current_tree=$(GIT_INDEX_FILE="$current_index" git write-tree 2>/dev/null)\n'
+        'rm -f "$current_index"\n'
+        'baseline_file="$(git rev-parse --git-dir)/symnav-bench-baseline-tree"\n'
+        'if [ -s "$baseline_file" ]; then\n'
+        '  baseline_tree=$(cat "$baseline_file")\n'
+        "else\n"
+        f"  baseline_tree={spec.base_commit}\n"
+        "fi\n"
+        'git diff --binary "$baseline_tree" "$current_tree"'
+        " > /logs/artifacts/model.patch 2>/dev/null || true\n"
         'echo "[pre_artifacts] captured'
         ' $(wc -c < /logs/artifacts/model.patch) bytes"\n'
     )

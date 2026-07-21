@@ -7,6 +7,7 @@ from pier.models.agent.network import NetworkAllowlist
 
 from symnav_bench.agent_integrations import AgentIntegrationBundle, runtime_integration_bundle
 from symnav_bench.agents.install import (
+    capture_pre_agent_baseline_step,
     CODEX_AUTH_DOMAINS,
     INSTALL_DOMAINS,
     InstallStep,
@@ -32,6 +33,7 @@ class StockCodex(Codex):
             toolchain_root_step(workdir),
             *codex_integration_steps(bundle, treatment=False, workdir=workdir),
             workspace_capture_step(logs_dir, ("codex",), workdir=workdir),
+            capture_pre_agent_baseline_step(workdir),
         )
         super().__init__(**kwargs)
 
@@ -71,6 +73,7 @@ class SymnavCodex(StockCodex):
                 ),
             ),
             workspace_capture_step(logs_dir, ("codex",), workdir=workdir),
+            capture_pre_agent_baseline_step(workdir),
         )
         Codex.__init__(self, **kwargs)
 

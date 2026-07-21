@@ -7,6 +7,7 @@ from pier.models.agent.network import NetworkAllowlist
 
 from symnav_bench.agent_integrations import AgentIntegrationBundle, runtime_integration_bundle
 from symnav_bench.agents.install import (
+    capture_pre_agent_baseline_step,
     INSTALL_DOMAINS,
     InstallStep,
     claude_integration_steps,
@@ -31,6 +32,7 @@ class StockClaudeCode(ClaudeCode):
             toolchain_root_step(workdir),
             *claude_integration_steps(bundle, treatment=False, workdir=workdir),
             workspace_capture_step(logs_dir, ("claude", "claude-code"), workdir=workdir),
+            capture_pre_agent_baseline_step(workdir),
         )
         super().__init__(**kwargs)
 
@@ -66,6 +68,7 @@ class SymnavClaudeCode(StockClaudeCode):
                 ),
             ),
             workspace_capture_step(logs_dir, ("claude", "claude-code"), workdir=workdir),
+            capture_pre_agent_baseline_step(workdir),
         )
         ClaudeCode.__init__(self, **kwargs)
 

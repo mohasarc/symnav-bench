@@ -182,12 +182,15 @@ def test_verifier_script_prepares_runs_and_grades(tmp_path: Path) -> None:
     assert test_script.index("run_tests.sh") < test_script.index("grade.py grade")
 
 
-def test_pre_artifacts_captures_workdir_diff_from_base_commit(tmp_path: Path) -> None:
+def test_pre_artifacts_falls_back_to_base_commit_without_baseline(
+    tmp_path: Path,
+) -> None:
     task_dir = write_task(tmp_path)
 
     pre_artifacts = (task_dir / "pre_artifacts.sh").read_text(encoding="utf-8")
     assert "cd /testbed" in pre_artifacts
-    assert "git diff --binary " + "b" * 40 in pre_artifacts
+    assert "symnav-bench-baseline-tree" in pre_artifacts
+    assert "baseline_tree=" + "b" * 40 in pre_artifacts
     assert "/logs/artifacts/model.patch" in pre_artifacts
 
 

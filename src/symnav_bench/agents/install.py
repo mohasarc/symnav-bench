@@ -43,6 +43,24 @@ def toolchain_root_step(workdir: str = DEFAULT_WORKDIR) -> InstallStep:
     )
 
 
+def capture_pre_agent_baseline_step(workdir: str = DEFAULT_WORKDIR) -> InstallStep:
+    return InstallStep(
+        name="capture pre-agent baseline",
+        command="\n".join(
+            [
+                "set -eu",
+                f"cd {workdir}",
+                "baseline_index=$(mktemp)",
+                'cp "$(git rev-parse --git-path index)" "$baseline_index" 2>/dev/null || true',
+                'GIT_INDEX_FILE="$baseline_index" git add -A',
+                'GIT_INDEX_FILE="$baseline_index" git write-tree'
+                ' > "$(git rev-parse --git-dir)/symnav-bench-baseline-tree"',
+                'rm -f "$baseline_index"',
+            ]
+        ),
+    )
+
+
 def write_text_step(path: str, text: str) -> InstallStep:
     encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
     return InstallStep(
