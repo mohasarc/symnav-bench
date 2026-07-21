@@ -213,3 +213,51 @@ def test_tests_dockerfile_bakes_verifier_inputs_into_pinned_image(
     for name in ("test.sh", "run_tests.sh", "grade.py", "config.json", "test.patch"):
         assert f"COPY {name} /tests/{name}" in lines
     assert "RUN chmod +x /tests/test.sh /tests/run_tests.sh" in lines
+
+
+def test_pre_artifacts_diffs_against_pre_agent_baseline(tmp_path: Path) -> None:
+    import subprocess
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (repo / "source.txt").write_text("original\n", encoding="utf-8")
+    git("add", "source.txt")
+    git("commit", "-q", "-m", "base")
+
+    (repo / "Dockerfile").write_text("FROM baked\n", encoding="utf-8")
+    baseline_index = tmp_path / "baseline-index"
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "-A"],
+        check=True,
+        env={**os.environ, "GIT_INDEX_FILE": str(baseline_index)},
+    )
+    tree = subprocess.run(
+        ["git", "-C", str(repo), "write-tree"],
+        check=True, capture_output=True, text=True,
+        env={**os.environ, "GIT_INDEX_FILE": str(baseline_index)},
+    ).stdout.strip()
+    (repo / ".git" / "symnav-bench-baseline-tree").write_text(tree, encoding="utf-8")
+
+    (repo / "source.txt").write_text("agent fix\n", encoding="utf-8")
+    (repo / "brand-new.txt").write_text("agent file\n", encoding="utf-8")
+
+    task_dir = write_task(tmp_path, workdir=str(repo))
+    logs_dir = tmp_path / "logs"
+    script = (task_dir / "pre_artifacts.sh").read_text(encoding="utf-8")
+    script = script.replace("/logs/artifacts", str(logs_dir / "artifacts"))
+    runnable = tmp_path / "pre_artifacts.sh"
+    runnable.write_text(script, encoding="utf-8")
+    subprocess.run(["bash", str(runnable)], check=True, capture_output=True)
+
+    patch = (logs_dir / "artifacts" / "model.patch").read_text(encoding="utf-8")
+    assert "agent fix" in patch
+    assert "brand-new.txt" in patch
+    assert "Dockerfile" not in patch
