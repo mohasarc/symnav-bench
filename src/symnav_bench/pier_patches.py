@@ -16,7 +16,7 @@ PATCHED_INSTALL_LINES = (
 
 UNPATCHED_RUNTIME_SOURCING = "if [ -s ~/.nvm/nvm.sh ]; then . ~/.nvm/nvm.sh; fi"
 PATCHED_RUNTIME_SOURCING = (
-    'if [ -s ~/.nvm/nvm.sh ]; then NVM_DIR="$HOME/.nvm" . ~/.nvm/nvm.sh; fi'
+    "if [ -s ~/.nvm/nvm.sh ]; then NVM_DIR=$HOME/.nvm . ~/.nvm/nvm.sh; fi"
 )
 
 
