@@ -105,7 +105,7 @@ def test_task_toml_pins_environment_and_verifier(tmp_path: Path) -> None:
 
     environment = data["environment"]
     assert isinstance(environment, dict)
-    assert environment["docker_image"] == PINNED_IMAGE
+    assert "docker_image" not in environment
     assert environment["workdir"] == "/testbed"
     verifier = data["verifier"]
     assert isinstance(verifier, dict)
