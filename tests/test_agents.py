@@ -62,3 +62,43 @@ def test_workspace_capture_defaults_to_persisted_agent_logs() -> None:
     step = workspace_capture_step(None, ("claude",))
     assert "logs_dir=/logs/agent" in step.command
     assert "workspace/app" in step.command
+
+
+def test_install_layer_targets_the_task_workdir() -> None:
+    script = pinned_symnav_install_script(
+        "a" * 40,
+        codex=True,
+        allowed_commands=("overview",),
+        workdir="/testbed",
+    )
+
+    assert 'exec pnpm --dir /opt/symnav --filter symnav dev --cwd /testbed "$@"' in script
+    assert "ln -sf /testbed/bin/symnav /usr/local/bin/symnav" in script
+    assert "/app" not in script
+
+    root_step = toolchain_root_step("/testbed")
+    assert "/testbed/.git/info" in root_step.command
+    assert "/app" not in root_step.command
+
+    append_step = append_text_step("/testbed/AGENTS.md", "hello", workdir="/testbed")
+    assert 'rel="${path#/testbed/}"' in append_step.command
+    assert "git -C /testbed" in append_step.command
+    assert "/app" not in append_step.command
+
+    capture_step = workspace_capture_step(None, ("codex",), workdir="/testbed")
+    assert "git -C /testbed diff >" in capture_step.command
+    assert "/app/" not in capture_step.command
+
+
+def test_symnav_install_bootstraps_node_and_pnpm_when_missing() -> None:
+    script = pinned_symnav_install_script(
+        "a" * 40,
+        codex=True,
+        allowed_commands=("overview",),
+    )
+
+    assert "command -v pnpm" in script
+    assert "nvm-sh/nvm" in script
+    assert "nvm install 22" in script
+    assert "npm install -g pnpm@10" in script
+    assert 'PATH="$symnav_bench_node_bin:$PATH"' in script
