@@ -47,22 +47,26 @@ def report_json(text, start_pattern, end_pattern=None):
         return None
 
 
-def jest_status_buckets(document, title_key):
+JEST_NAME_KEYS = ("fullName", "title")
+
+
+def jest_status_buckets(document):
+    """Report each assertion under both jest name forms.
+
+    SWE-PolyBench recorded some repos' ids from `fullName` (describe path
+    included) and others' from the leaf `title`, sometimes both inside one
+    instance, so a single form cannot match every declared id.
+    """
     passed, failed, skipped = [], [], []
     for suite in document.get("testResults") or []:
         file_name = str(suite.get("name") or "").strip()
         for assertion in suite.get("assertionResults") or []:
-            title = str(assertion.get(title_key) or "").strip()
-            if not title:
-                continue
-            name = file_name + "->" + title
             status = assertion.get("status")
-            if status == "passed":
-                passed.append(name)
-            elif status == "failed":
-                failed.append(name)
-            else:
-                skipped.append(name)
+            bucket = passed if status == "passed" else failed if status == "failed" else skipped
+            for key in JEST_NAME_KEYS:
+                title = str(assertion.get(key) or "").strip()
+                if title:
+                    bucket.append(file_name + "->" + title)
     return TestOutcomes.of(passed, failed, skipped)
 
 
@@ -70,7 +74,7 @@ def parse_jest(text):
     document = report_json(text, r'{\s*"numFailedTestSuites"')
     if document is None:
         return TestOutcomes.of()
-    return jest_status_buckets(document, "fullName")
+    return jest_status_buckets(document)
 
 
 def parse_jest_tailwind(text):
@@ -79,7 +83,7 @@ def parse_jest_tailwind(text):
     )
     if document is None:
         return TestOutcomes.of()
-    return jest_status_buckets(document, "title")
+    return jest_status_buckets(document)
 
 
 def parse_mocha(text):
