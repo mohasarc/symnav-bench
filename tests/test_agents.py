@@ -17,7 +17,9 @@ def test_pinned_symnav_install_script_checks_out_sha_and_builds() -> None:
         allowed_commands=("overview", "refs"),
     )
 
-    assert "git checkout 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'" in script
+    assert "git fetch --depth 1 origin 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'" in script
+    assert "git checkout FETCH_HEAD" in script
+    assert "git clone" not in script
     assert "pnpm install --frozen-lockfile" in script
     assert "pnpm build" in script
     assert "allowed_commands='overview refs'" in script
