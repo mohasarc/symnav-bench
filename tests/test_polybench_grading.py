@@ -429,3 +429,41 @@ def test_agent_edits_to_test_files_lose_to_the_test_patch(tmp_path: Path) -> Non
     assert not (tmp_path / "verifier" / "reward.json").exists()
     assert (repo / "source.txt").read_text(encoding="utf-8") == "fixed\n"
     assert (repo / "tests.txt").read_text(encoding="utf-8") == "hidden tests\n"
+
+
+CORRUPTED = "/testbed/__tests__/testbedlyAtRule.test.js->it copies a class"
+REPORTED = "/testbed/__tests__/applyAtRule.test.js->it copies a class"
+
+
+def test_dataset_workdir_substitution_inside_a_name_still_matches() -> None:
+    outcomes = TestOutcomes.of(passed=("f1", REPORTED))
+
+    result = rewards(outcomes, ("f1",), (CORRUPTED,))
+
+    assert result["p2p_passed"] == 1
+    assert result["reward"] == 1
+
+
+def test_repair_only_rewrites_occurrences_after_the_workdir_prefix() -> None:
+    outcomes = TestOutcomes.of(passed=("/app/__tests__/applyAtRule.test.js->t",))
+
+    result = rewards(outcomes, ("/testbed/__tests__/testbedlyAtRule.test.js->t",), ())
+
+    assert result["f2p_passed"] == 0
+
+
+def test_a_genuine_testbed_name_keeps_matching_exactly() -> None:
+    genuine = "/testbed/test/testbed-harness.test.ts->boots"
+    outcomes = TestOutcomes.of(passed=(genuine,))
+
+    result = rewards(outcomes, (genuine,), ())
+
+    assert result["f2p_passed"] == 1
+
+
+def test_repaired_name_does_not_override_an_observed_failure() -> None:
+    outcomes = TestOutcomes.of(failed=(REPORTED,))
+
+    result = rewards(outcomes, (CORRUPTED,), ())
+
+    assert result["f2p_passed"] == 0

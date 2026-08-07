@@ -240,19 +240,57 @@ def unique_names(names):
     return ordered
 
 
+WORKDIR_PREFIX = "/testbed/"
+SUBSTITUTED_TOKEN = "testbed"
+ORIGINAL_TOKEN = "app"
+
+
+def repaired_name(name):
+    """Undo the dataset's global "app" -> "testbed" rewrite past the workdir.
+
+    SWE-PolyBench built its test ids by replacing every "app" in the original
+    absolute path, so `/app/__tests__/applyAtRule.test.js` was recorded as
+    `/testbed/__tests__/testbedlyAtRule.test.js`. Runners report the real name.
+    """
+    if not name.startswith(WORKDIR_PREFIX):
+        return name
+    tail = name[len(WORKDIR_PREFIX):]
+    return WORKDIR_PREFIX + tail.replace(SUBSTITUTED_TOKEN, ORIGINAL_TOKEN)
+
+
+def test_passed(outcomes, name):
+    def observed_passed(candidate):
+        return (
+            candidate in outcomes.passed
+            and candidate not in outcomes.failed
+            and candidate not in outcomes.skipped
+        )
+
+    def reported(candidate):
+        return (
+            candidate in outcomes.passed
+            or candidate in outcomes.failed
+            or candidate in outcomes.skipped
+        )
+
+    if reported(name):
+        return observed_passed(name)
+    return observed_passed(repaired_name(name))
+
+
 def rewards(outcomes, f2p, p2p, apply_failed=False):
     f2p_ids = unique_names(f2p)
     p2p_ids = unique_names(p2p)
 
-    def test_passed(name):
-        return (
-            name in outcomes.passed
-            and name not in outcomes.failed
-            and name not in outcomes.skipped
-        )
+    def test_passed_here(name):
+        return test_passed(outcomes, name)
 
-    f2p_passed = 0 if apply_failed else sum(1 for name in f2p_ids if test_passed(name))
-    p2p_passed = 0 if apply_failed else sum(1 for name in p2p_ids if test_passed(name))
+    f2p_passed = (
+        0 if apply_failed else sum(1 for name in f2p_ids if test_passed_here(name))
+    )
+    p2p_passed = (
+        0 if apply_failed else sum(1 for name in p2p_ids if test_passed_here(name))
+    )
     total = len(f2p_ids) + len(p2p_ids)
     solved = (
         not apply_failed
@@ -398,11 +436,7 @@ def cmd_grade():
 
     def report_bucket(label, names):
         for name in unique_names(names):
-            if not (
-                name in outcomes.passed
-                and name not in outcomes.failed
-                and name not in outcomes.skipped
-            ):
+            if not test_passed(outcomes, name):
                 log("FAILED [%s] %s" % (label, name))
 
     report_bucket("f2p", config["f2p"])
