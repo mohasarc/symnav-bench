@@ -594,3 +594,15 @@ def test_polybench_verifier_gets_internet_and_long_timeout(tmp_path: Path) -> No
     assert "[verifier.environment]" in task_toml
     assert "allow_internet = true" in task_toml
     assert "timeout_sec = 3600.0" in task_toml
+
+
+def test_polybench_bounds_the_test_command_below_the_verifier_timeout(
+    tmp_path: Path,
+) -> None:
+    suite = materializing_source(tiered_rows()).resolve()
+    source = materializing_source(tiered_rows(), suite=suite)
+
+    task_dir = source.ensure_tasks_dir(["b-high"], tmp_path) / "b-high"
+
+    run_tests = (task_dir / "tests" / "run_tests.sh").read_text(encoding="utf-8")
+    assert "timeout --kill-after=60 1800.0 bash -s" in run_tests
