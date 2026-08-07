@@ -429,3 +429,86 @@ def test_agent_edits_to_test_files_lose_to_the_test_patch(tmp_path: Path) -> Non
     assert not (tmp_path / "verifier" / "reward.json").exists()
     assert (repo / "source.txt").read_text(encoding="utf-8") == "fixed\n"
     assert (repo / "tests.txt").read_text(encoding="utf-8") == "hidden tests\n"
+
+
+CORRUPTED = "/testbed/__tests__/testbedlyAtRule.test.js->it copies a class"
+REPORTED = "/testbed/__tests__/applyAtRule.test.js->it copies a class"
+
+
+def test_dataset_workdir_substitution_inside_a_name_still_matches() -> None:
+    outcomes = TestOutcomes.of(passed=("f1", REPORTED))
+
+    result = rewards(outcomes, ("f1",), (CORRUPTED,))
+
+    assert result["p2p_passed"] == 1
+    assert result["reward"] == 1
+
+
+def test_repair_only_rewrites_occurrences_after_the_workdir_prefix() -> None:
+    outcomes = TestOutcomes.of(passed=("/app/__tests__/applyAtRule.test.js->t",))
+
+    result = rewards(outcomes, ("/testbed/__tests__/testbedlyAtRule.test.js->t",), ())
+
+    assert result["f2p_passed"] == 0
+
+
+def test_a_genuine_testbed_name_keeps_matching_exactly() -> None:
+    genuine = "/testbed/test/testbed-harness.test.ts->boots"
+    outcomes = TestOutcomes.of(passed=(genuine,))
+
+    result = rewards(outcomes, (genuine,), ())
+
+    assert result["f2p_passed"] == 1
+
+
+def test_repaired_name_does_not_override_an_observed_failure() -> None:
+    outcomes = TestOutcomes.of(failed=(REPORTED,))
+
+    result = rewards(outcomes, (CORRUPTED,), ())
+
+    assert result["f2p_passed"] == 0
+
+
+JEST_BOTH_NAME_FORMS = """
+{"numFailedTestSuites":0,"numFailedTests":0,"numPassedTestSuites":1,
+"numPassedTests":1,"numTotalTests":1,"testResults":[
+    {"name":"/testbed/test/unit/cli.test.ts","assertionResults":[
+        {"fullName":"parser should set proxy uri","title":"should set proxy uri",
+         "status":"passed"}]}
+],"wasInterrupted":false}
+Container exited with status code: 0
+"""
+
+
+def test_jest_parser_reports_a_test_under_both_full_name_and_title() -> None:
+    outcomes = parse_test_log("jest", JEST_BOTH_NAME_FORMS)
+
+    assert "/testbed/test/unit/cli.test.ts->parser should set proxy uri" in outcomes.passed
+    assert "/testbed/test/unit/cli.test.ts->should set proxy uri" in outcomes.passed
+
+
+def test_dataset_ids_in_either_jest_name_form_score() -> None:
+    outcomes = parse_test_log("jest", JEST_BOTH_NAME_FORMS)
+
+    result = rewards(
+        outcomes,
+        ("/testbed/test/unit/cli.test.ts->parser should set proxy uri",),
+        ("/testbed/test/unit/cli.test.ts->should set proxy uri",),
+    )
+
+    assert result["reward"] == 1
+
+
+def test_a_leaf_title_shared_by_a_failing_sibling_does_not_count_as_passed() -> None:
+    log = """
+{"numFailedTestSuites":1,"numFailedTests":1,"numPassedTests":1,"testResults":[
+    {"name":"/testbed/a.test.ts","assertionResults":[
+        {"fullName":"outer one should log","title":"should log","status":"passed"},
+        {"fullName":"outer two should log","title":"should log","status":"failed"}]}
+],"wasInterrupted":false}
+"""
+    outcomes = parse_test_log("jest", log)
+
+    result = rewards(outcomes, ("/testbed/a.test.ts->should log",), ())
+
+    assert result["f2p_passed"] == 0

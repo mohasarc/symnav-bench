@@ -47,22 +47,26 @@ def report_json(text, start_pattern, end_pattern=None):
         return None
 
 
-def jest_status_buckets(document, title_key):
+JEST_NAME_KEYS = ("fullName", "title")
+
+
+def jest_status_buckets(document):
+    """Report each assertion under both jest name forms.
+
+    SWE-PolyBench recorded some repos' ids from `fullName` (describe path
+    included) and others' from the leaf `title`, sometimes both inside one
+    instance, so a single form cannot match every declared id.
+    """
     passed, failed, skipped = [], [], []
     for suite in document.get("testResults") or []:
         file_name = str(suite.get("name") or "").strip()
         for assertion in suite.get("assertionResults") or []:
-            title = str(assertion.get(title_key) or "").strip()
-            if not title:
-                continue
-            name = file_name + "->" + title
             status = assertion.get("status")
-            if status == "passed":
-                passed.append(name)
-            elif status == "failed":
-                failed.append(name)
-            else:
-                skipped.append(name)
+            bucket = passed if status == "passed" else failed if status == "failed" else skipped
+            for key in JEST_NAME_KEYS:
+                title = str(assertion.get(key) or "").strip()
+                if title:
+                    bucket.append(file_name + "->" + title)
     return TestOutcomes.of(passed, failed, skipped)
 
 
@@ -70,7 +74,7 @@ def parse_jest(text):
     document = report_json(text, r'{\s*"numFailedTestSuites"')
     if document is None:
         return TestOutcomes.of()
-    return jest_status_buckets(document, "fullName")
+    return jest_status_buckets(document)
 
 
 def parse_jest_tailwind(text):
@@ -79,7 +83,7 @@ def parse_jest_tailwind(text):
     )
     if document is None:
         return TestOutcomes.of()
-    return jest_status_buckets(document, "title")
+    return jest_status_buckets(document)
 
 
 def parse_mocha(text):
@@ -240,19 +244,57 @@ def unique_names(names):
     return ordered
 
 
+WORKDIR_PREFIX = "/testbed/"
+SUBSTITUTED_TOKEN = "testbed"
+ORIGINAL_TOKEN = "app"
+
+
+def repaired_name(name):
+    """Undo the dataset's global "app" -> "testbed" rewrite past the workdir.
+
+    SWE-PolyBench built its test ids by replacing every "app" in the original
+    absolute path, so `/app/__tests__/applyAtRule.test.js` was recorded as
+    `/testbed/__tests__/testbedlyAtRule.test.js`. Runners report the real name.
+    """
+    if not name.startswith(WORKDIR_PREFIX):
+        return name
+    tail = name[len(WORKDIR_PREFIX):]
+    return WORKDIR_PREFIX + tail.replace(SUBSTITUTED_TOKEN, ORIGINAL_TOKEN)
+
+
+def test_passed(outcomes, name):
+    def observed_passed(candidate):
+        return (
+            candidate in outcomes.passed
+            and candidate not in outcomes.failed
+            and candidate not in outcomes.skipped
+        )
+
+    def reported(candidate):
+        return (
+            candidate in outcomes.passed
+            or candidate in outcomes.failed
+            or candidate in outcomes.skipped
+        )
+
+    if reported(name):
+        return observed_passed(name)
+    return observed_passed(repaired_name(name))
+
+
 def rewards(outcomes, f2p, p2p, apply_failed=False):
     f2p_ids = unique_names(f2p)
     p2p_ids = unique_names(p2p)
 
-    def test_passed(name):
-        return (
-            name in outcomes.passed
-            and name not in outcomes.failed
-            and name not in outcomes.skipped
-        )
+    def test_passed_here(name):
+        return test_passed(outcomes, name)
 
-    f2p_passed = 0 if apply_failed else sum(1 for name in f2p_ids if test_passed(name))
-    p2p_passed = 0 if apply_failed else sum(1 for name in p2p_ids if test_passed(name))
+    f2p_passed = (
+        0 if apply_failed else sum(1 for name in f2p_ids if test_passed_here(name))
+    )
+    p2p_passed = (
+        0 if apply_failed else sum(1 for name in p2p_ids if test_passed_here(name))
+    )
     total = len(f2p_ids) + len(p2p_ids)
     solved = (
         not apply_failed
@@ -398,11 +440,7 @@ def cmd_grade():
 
     def report_bucket(label, names):
         for name in unique_names(names):
-            if not (
-                name in outcomes.passed
-                and name not in outcomes.failed
-                and name not in outcomes.skipped
-            ):
+            if not test_passed(outcomes, name):
                 log("FAILED [%s] %s" % (label, name))
 
     report_bucket("f2p", config["f2p"])

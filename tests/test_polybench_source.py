@@ -606,3 +606,81 @@ def test_polybench_bounds_the_test_command_below_the_verifier_timeout(
 
     run_tests = (task_dir / "tests" / "run_tests.sh").read_text(encoding="utf-8")
     assert "timeout --kill-after=60 1800.0 bash -s" in run_tests
+
+
+def bazel_row(instance_id: str, test_command: str, p2p: str) -> dict[str, str]:
+    return dataset_row(
+        instance_id=instance_id,
+        repo="angular/angular",
+        test_command=test_command,
+        F2P="['/packages/compiler-cli/ngcc/test:test']",
+        P2P=p2p,
+        modified_nodes='["n1", "n2", "n3", "n4", "n5", "n6"]',
+        num_func_changes="1",
+        num_class_changes="0",
+    )
+
+
+BAZEL_COMMAND = (
+    "bazel test packages/compiler-cli/ngcc/test:test --keep_going "
+    "--test_output=summary"
+)
+
+
+def test_resolve_excludes_bazel_instances_whose_command_never_runs_p2p(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rows = [
+        bazel_row(
+            "ungradable",
+            BAZEL_COMMAND,
+            "['/packages/core/test/bundling/injection:symbol_test']",
+        ),
+        dataset_row(
+            instance_id="b-high",
+            modified_nodes='["n1", "n2", "n3", "n4", "n5", "n6"]',
+            num_func_changes="1",
+            num_class_changes="0",
+        ),
+    ]
+
+    suite = materializing_source(rows).resolve()
+
+    assert [task.slug for task in suite.tasks] == ["b-high"]
+    stderr = capsys.readouterr().err
+    assert "ungradable" in stderr
+    assert "p2p" in stderr
+
+
+def test_resolve_keeps_bazel_instances_whose_command_runs_every_p2p_target() -> None:
+    rows = [
+        bazel_row(
+            "gradable",
+            BAZEL_COMMAND + " packages/core/test/bundling/injection:symbol_test",
+            "['/packages/core/test/bundling/injection:symbol_test']",
+        )
+    ]
+
+    suite = materializing_source(rows).resolve()
+
+    assert [task.slug for task in suite.tasks] == ["gradable"]
+
+
+def test_bazel_package_pattern_covers_its_targets() -> None:
+    rows = [
+        bazel_row(
+            "gradable",
+            "bazel test packages/core/test/render3 --keep_going",
+            "['/packages/core/test/render3:render3']",
+        )
+    ]
+
+    suite = materializing_source(rows).resolve()
+
+    assert [task.slug for task in suite.tasks] == ["gradable"]
+
+
+def test_non_bazel_instances_are_never_excluded_for_p2p_coverage() -> None:
+    suite = materializing_source(tiered_rows()).resolve()
+
+    assert [task.slug for task in suite.tasks] == ["b-high", "c-mid"]
