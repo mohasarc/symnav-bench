@@ -112,5 +112,21 @@ def test_apt_install_falls_back_to_archive_mirrors(tmp_path: Path) -> None:
     compile(patched, str(module), "exec")
     assert "archive.debian.org" in patched
     assert "apt-get update && apt-get install -y curl ripgrep;" not in patched
-    assert "apt-get install -y curl &&" in patched
-    assert "apt-get install -y ripgrep ||" in patched
+    assert "install -y curl &&" in patched
+    assert "install -y ripgrep ||" in patched
+
+
+def test_apt_install_accepts_expired_archive_signatures(tmp_path: Path) -> None:
+    module = write_codex_module(
+        tmp_path,
+        UNPATCHED_SNIPPET
+        + '\nROOT = (\n'
+        + '    "  apt-get update && apt-get install -y curl ripgrep;"\n'
+        + ')\n',
+    )
+
+    patch_codex_nvm_install(module)
+
+    patched = module.read_text(encoding="utf-8")
+    compile(patched, str(module), "exec")
+    assert patched.count("apt-get -o APT::Get::AllowUnauthenticated=true install -y") == 2
