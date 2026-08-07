@@ -111,7 +111,9 @@ class SwePolybenchTaskSource(BenchmarkTaskSource):
     def resolve(self) -> SuiteManifest:
         if not self.selection.tiers:
             raise ValueError("swe-polybench selection requires fit tiers")
-        selected = select_instances(self.load_instances(), self.selection.tiers)
+        selected = self.gradable_instances(
+            select_instances(self.load_instances(), self.selection.tiers)
+        )
         images = self.resolve_images(selected)
         available = [
             instance for instance in selected if images[instance.instance_id] is not None
@@ -194,6 +196,26 @@ class SwePolybenchTaskSource(BenchmarkTaskSource):
     def image_resolver(self) -> ImageResolver:
         return self.resolve_image if self.resolve_image is not None else resolve_eval_image
 
+    def gradable_instances(
+        self, instances: Sequence[PolybenchInstance]
+    ) -> tuple[PolybenchInstance, ...]:
+        ungradable = {
+            instance.instance_id: ungraded_p2p_targets(instance)
+            for instance in instances
+        }
+        excluded = {slug: targets for slug, targets in ungradable.items() if targets}
+        if excluded:
+            print(
+                f"swe-polybench: excluded {len(excluded)} of {len(instances)} selected "
+                "tasks whose test command never runs their p2p targets:",
+                file=sys.stderr,
+            )
+            for slug, targets in excluded.items():
+                print(f"  {slug} ({len(targets)} p2p targets unreachable)", file=sys.stderr)
+        return tuple(
+            instance for instance in instances if not ungradable[instance.instance_id]
+        )
+
     def resolve_images(
         self, instances: Sequence[PolybenchInstance]
     ) -> dict[str, str | None]:
@@ -236,6 +258,59 @@ def resolve_eval_image(instance_id: str) -> str | None:
     if digest is None:
         return None
     return f"{EVAL_IMAGE_REGISTRY}/{repository}@{digest}"
+
+
+class BazelTargetCoverage:
+    """Whether a bazel `test_command` runs every pass-to-pass target it declares.
+
+    Reward needs each p2p test observed passing, and for bazel the test identity
+    is the command argument, so uncovered p2p targets can never be reported.
+    """
+
+    def __init__(self, test_command: str) -> None:
+        self.patterns = self._patterns(test_command)
+
+    def covers_all(self, p2p: Sequence[str]) -> bool:
+        return all(self._covers(self._label(target)) for target in p2p)
+
+    def uncovered(self, p2p: Sequence[str]) -> tuple[str, ...]:
+        return tuple(
+            target for target in p2p if not self._covers(self._label(target))
+        )
+
+    def _covers(self, label: str) -> bool:
+        package, _, _ = label.partition(":")
+        return any(
+            pattern == label
+            or pattern == package
+            or (pattern.endswith("/...") and package.startswith(pattern[:-3]))
+            or (pattern in (f"{package}:all", f"{package}:*"))
+            for pattern in self.patterns
+        )
+
+    @staticmethod
+    def _label(target: str) -> str:
+        return target.lstrip("/")
+
+    @staticmethod
+    def _patterns(test_command: str) -> tuple[str, ...]:
+        _, marker, tail = test_command.partition("bazel test ")
+        if not marker:
+            return ()
+        patterns = []
+        for token in tail.split():
+            if token in ("&&", "||", ";", "|"):
+                break
+            if token.startswith("-"):
+                continue
+            patterns.append(token.lstrip("/"))
+        return tuple(patterns)
+
+
+def ungraded_p2p_targets(instance: PolybenchInstance) -> tuple[str, ...]:
+    if log_parser_for(instance) != "bazel-angular":
+        return ()
+    return BazelTargetCoverage(instance.test_command).uncovered(instance.p2p)
 
 
 def log_parser_for(instance: PolybenchInstance) -> str:
