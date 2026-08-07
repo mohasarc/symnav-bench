@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -194,6 +196,45 @@ def test_pre_artifacts_falls_back_to_base_commit_without_baseline(
     assert "/logs/artifacts/model.patch" in pre_artifacts
 
 
+def test_run_script_leaves_the_test_command_unbounded_by_default(
+    tmp_path: Path,
+) -> None:
+    run_script = (write_task(tmp_path) / "tests" / "run_tests.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "timeout" not in run_script
+
+
+def test_run_script_bounds_a_hanging_test_command(tmp_path: Path) -> None:
+    run_script = (
+        write_task(tmp_path, test_command_timeout_sec=1800.0) / "tests" / "run_tests.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "timeout --kill-after=60 1800.0 bash -s" in run_script
+    assert run_script.index("timeout") < run_script.index("yarn cross-env")
+
+
+@pytest.mark.skipif(
+    shutil.which("timeout") is None, reason="GNU coreutils timeout is not installed"
+)
+def test_bounded_run_script_kills_a_hanging_process_tree(tmp_path: Path) -> None:
+    task_dir = write_task(
+        tmp_path,
+        workdir=str(tmp_path),
+        test_command="sleep 300 & wait",
+        test_command_timeout_sec=1.0,
+    )
+
+    completed = subprocess.run(
+        ["bash", str(task_dir / "tests" / "run_tests.sh")],
+        capture_output=True,
+        timeout=60,
+    )
+
+    assert completed.returncode == 124
+
+
 def test_shell_scripts_are_executable(tmp_path: Path) -> None:
     task_dir = write_task(tmp_path)
 
@@ -219,8 +260,6 @@ def test_tests_dockerfile_bakes_verifier_inputs_into_pinned_image(
 
 
 def test_pre_artifacts_diffs_against_pre_agent_baseline(tmp_path: Path) -> None:
-    import subprocess
-
     def git(*args: str) -> str:
         return subprocess.run(
             ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True

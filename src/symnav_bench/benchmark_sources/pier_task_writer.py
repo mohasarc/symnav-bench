@@ -22,6 +22,7 @@ class MaterializedTaskSpec:
     wall_clock_seconds: int | None = None
     verifier_allow_internet: bool = False
     verifier_timeout_sec: float = 1800.0
+    test_command_timeout_sec: float | None = None
 
 
 def write_pier_task_dir(spec: MaterializedTaskSpec, dest: Path) -> Path:
@@ -167,12 +168,20 @@ def verifier_script(spec: MaterializedTaskSpec) -> str:
     )
 
 
+TEST_COMMAND_HEREDOC = "SYMNAV_BENCH_TEST_COMMAND"
+TEST_COMMAND_KILL_GRACE_SEC = 60
+
+
 def run_tests_script(spec: MaterializedTaskSpec) -> str:
+    header = "#!/bin/bash\nset -uxo pipefail\n" f"cd {spec.workdir}\n"
+    if spec.test_command_timeout_sec is None:
+        return header + f"{spec.test_command}\n"
     return (
-        "#!/bin/bash\n"
-        "set -uxo pipefail\n"
-        f"cd {spec.workdir}\n"
+        header
+        + f"timeout --kill-after={TEST_COMMAND_KILL_GRACE_SEC}"
+        f" {spec.test_command_timeout_sec} bash -s <<'{TEST_COMMAND_HEREDOC}'\n"
         f"{spec.test_command}\n"
+        f"{TEST_COMMAND_HEREDOC}\n"
     )
 
 

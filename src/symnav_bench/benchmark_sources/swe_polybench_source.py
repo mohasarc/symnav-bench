@@ -37,6 +37,7 @@ HIGH_TIER_MODIFIED_NODES = 6
 HIGH_TIER_DECLARATION_CHANGES = 4
 EVAL_IMAGE_REGISTRY = "ghcr.io"
 EVAL_IMAGE_TAG = "latest"
+TEST_COMMAND_TIMEOUT_SEC = 1800.0
 
 REPO_LOG_PARSERS = {
     "microsoft/vscode": "mocha",
@@ -286,6 +287,7 @@ def materialize_instance(
         grade_script=grade_script_source(),
         verifier_allow_internet=True,
         verifier_timeout_sec=3600.0,
+        test_command_timeout_sec=TEST_COMMAND_TIMEOUT_SEC,
     )
     return write_pier_task_dir(spec, task_dir)
 
