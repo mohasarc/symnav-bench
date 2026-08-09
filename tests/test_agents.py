@@ -114,3 +114,20 @@ def test_pre_agent_baseline_snapshot_is_the_final_workdir_step() -> None:
     assert 'GIT_INDEX_FILE="$baseline_index" git add -A' in step.command
     assert "symnav-bench-baseline-tree" in step.command
     assert "/app" not in step.command
+
+
+GLIBC217_URL = (
+    "https://unofficial-builds.nodejs.org/download/release/v22.23.2/"
+    "node-v22.23.2-linux-x64-glibc-217.tar.gz"
+)
+
+
+def test_node_bootstrap_falls_back_to_a_portable_build_on_old_glibc() -> None:
+    script = pinned_symnav_install_script(
+        "a" * 40, codex=True, allowed_commands=("overview",)
+    )
+
+    assert "nvm install 22" in script
+    assert GLIBC217_URL in script
+    assert "node -e ''" in script
+    assert "/opt/node/bin" in script

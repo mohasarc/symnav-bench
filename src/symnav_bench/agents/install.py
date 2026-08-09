@@ -280,6 +280,31 @@ def symnav_command_wrapper(allowed_commands: tuple[str, ...], upstream: str) -> 
     )
 
 
+NODE_VERSION = "22.23.2"
+PORTABLE_NODE_URL = (
+    "https://unofficial-builds.nodejs.org/download/release/"
+    f"v{NODE_VERSION}/node-v{NODE_VERSION}-linux-x64-glibc-217.tar.gz"
+)
+
+
+def portable_node_fallback_lines(indent: str = "  ") -> list[str]:
+    """Install Node from the glibc-2.17 build when the nvm one cannot run.
+
+    Some eval images are old enough that the official Node build refuses to
+    start (`GLIBC_2.28 not found`), which locks the agent out of the container
+    entirely. Same Node version either way — only the libc it links against
+    differs.
+    """
+    return [
+        f"{indent}if ! node -e '' 2>/dev/null; then",
+        f"{indent}  curl -fsSL {PORTABLE_NODE_URL} -o /tmp/node-portable.tar.gz",
+        f"{indent}  mkdir -p /opt/node",
+        f"{indent}  tar -xzf /tmp/node-portable.tar.gz -C /opt/node --strip-components=1",
+        f'{indent}  export PATH="/opt/node/bin:$PATH"',
+        f"{indent}fi",
+    ]
+
+
 def node_toolchain_bootstrap_lines() -> list[str]:
     return [
         "if ! command -v pnpm >/dev/null 2>&1; then",
@@ -288,7 +313,8 @@ def node_toolchain_bootstrap_lines() -> list[str]:
         "    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash",
         "  fi",
         '  \\. "$NVM_DIR/nvm.sh"',
-        "  nvm install 22",
+        "  nvm install 22 || true",
+        *portable_node_fallback_lines(),
         "  npm install -g pnpm@10",
         "fi",
         'symnav_bench_node_bin="$(dirname "$(command -v node)")"',

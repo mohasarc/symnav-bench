@@ -130,3 +130,15 @@ def test_apt_install_accepts_expired_archive_signatures(tmp_path: Path) -> None:
     patched = module.read_text(encoding="utf-8")
     compile(patched, str(module), "exec")
     assert patched.count("apt-get -o APT::Get::AllowUnauthenticated=true install -y") == 2
+
+
+def test_codex_node_install_falls_back_to_a_portable_build(tmp_path: Path) -> None:
+    module = write_codex_module(tmp_path, UNPATCHED_SNIPPET)
+
+    patch_codex_nvm_install(module)
+
+    patched = module.read_text(encoding="utf-8")
+    compile(patched, str(module), "exec")
+    assert "glibc-217" in patched
+    assert "/opt/node/bin" in patched
+    assert '"' not in patched.split("nvm install 22")[1].split("npm -v")[0]

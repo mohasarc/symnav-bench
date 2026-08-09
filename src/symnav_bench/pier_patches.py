@@ -14,6 +14,22 @@ PATCHED_INSTALL_LINES = (
 )
 
 
+PORTABLE_NODE_URL = (
+    "https://unofficial-builds.nodejs.org/download/release/v22.23.2/"
+    "node-v22.23.2-linux-x64-glibc-217.tar.gz"
+)
+UNPATCHED_NODE_INSTALL = "  nvm install 22 && nvm alias default 22 && npm -v &&"
+# Kept free of double quotes: this text is spliced into a double-quoted string
+# literal inside pier's own source file.
+PATCHED_NODE_INSTALL = (
+    "  { nvm install 22 && nvm alias default 22 && node -e '' 2>/dev/null; }"
+    " || { curl -fsSL " + PORTABLE_NODE_URL + " -o /tmp/node-portable.tar.gz"
+    " && mkdir -p /opt/node"
+    " && tar -xzf /tmp/node-portable.tar.gz -C /opt/node --strip-components=1"
+    " && export PATH=/opt/node/bin:$PATH; } && npm -v &&"
+)
+
+
 UNPATCHED_RUNTIME_SOURCING = "if [ -s ~/.nvm/nvm.sh ]; then . ~/.nvm/nvm.sh; fi"
 PATCHED_RUNTIME_SOURCING = (
     "if [ -s ~/.nvm/nvm.sh ]; then NVM_DIR=$HOME/.nvm . ~/.nvm/nvm.sh; fi"
@@ -46,4 +62,5 @@ def patch_codex_nvm_install(module_path: Path | None = None) -> None:
         source = source.replace(UNPATCHED_INSTALL_LINES, PATCHED_INSTALL_LINES, 1)
     source = source.replace(UNPATCHED_RUNTIME_SOURCING, PATCHED_RUNTIME_SOURCING)
     source = source.replace(UNPATCHED_APT_INSTALL, PATCHED_APT_INSTALL)
+    source = source.replace(UNPATCHED_NODE_INSTALL, PATCHED_NODE_INSTALL)
     path.write_text(source, encoding="utf-8")
