@@ -152,29 +152,24 @@ def select_batches(
         if existing is not None
         else set()
     )
-    pending_slots = [slot for slot in configuration_slots if slot.slot_id not in completed]
-    try:
-        pending = tuple(
-            plan_balanced_batches(
-                pending_slots,
-                randomization_seed=study.protocol.randomization_seed,
-            )
+    # A slot keeps the batch that planned it. The committed batch file and the
+    # evidence validator are both keyed by batch id, so repacking survivors into
+    # a fresh batch-001 makes a run execute slots its own batch never planned,
+    # and its evidence then fails validation.
+    planned = plan_balanced_batches(
+        configuration_slots,
+        randomization_seed=study.protocol.randomization_seed,
+    )
+    pending = tuple(
+        BatchPlan(
+            study_id=batch.study_id,
+            configuration_id=batch.configuration_id,
+            batch_id=batch.batch_id,
+            index=batch.index,
+            slots=tuple(slot for slot in batch.slots if slot.slot_id not in completed),
         )
-    except ValueError:
-        planned = plan_balanced_batches(
-            configuration_slots,
-            randomization_seed=study.protocol.randomization_seed,
-        )
-        pending = tuple(
-            BatchPlan(
-                study_id=batch.study_id,
-                configuration_id=batch.configuration_id,
-                batch_id=batch.batch_id,
-                index=batch.index,
-                slots=tuple(slot for slot in batch.slots if slot.slot_id not in completed),
-            )
-            for batch in planned
-            if any(slot.slot_id not in completed for slot in batch.slots)
-        )
+        for batch in planned
+        if any(slot.slot_id not in completed for slot in batch.slots)
+    )
     selected = pending[:1] if mode == "run-next" else pending
     return BatchSelection(study.id, configuration_id, mode, selected)

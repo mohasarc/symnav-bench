@@ -41,7 +41,11 @@ def test_run_all_selects_every_pending_batch() -> None:
 def test_resume_skips_batches_without_unresolved_slots() -> None:
     study, suite = study_fixture(task_count=130)
     slots = plan_trial_slots(study, suite)
-    completed = {slot.slot_id for slot in slots[:252]}
+    planned = select_batches(study, suite, None, configuration_id="codex", mode="run-all")
+    finished, unfinished = planned.batches[0], planned.batches[1]
+    completed = {slot.slot_id for slot in finished.slots} | {
+        slot.slot_id for slot in unfinished.slots[2:]
+    }
     dataset = StudyDataset(
         manifest=study,
         suite=suite,
@@ -54,8 +58,45 @@ def test_resume_skips_batches_without_unresolved_slots() -> None:
 
     selection = select_batches(study, suite, dataset, configuration_id="codex", mode="resume")
 
-    assert len(selection.batches) == 1
+    assert [batch.batch_id for batch in selection.batches] == [unfinished.batch_id]
     assert all(slot.slot_id not in completed for slot in selection.batches[0].slots)
+
+
+def test_resume_keeps_each_slot_in_its_originally_planned_batch() -> None:
+    """A resumed slot must stay in the batch that planned it.
+
+    The committed batch file and the evidence validator are both keyed by
+    batch id, so repacking survivors into a fresh batch-001 makes the run
+    execute slots that its own batch never planned.
+    """
+    study, suite = study_fixture(task_count=130)
+    slots = plan_trial_slots(study, suite)
+    planned = select_batches(study, suite, None, configuration_id="codex", mode="run-all")
+    home = {
+        slot.slot_id: batch.batch_id
+        for batch in planned.batches
+        for slot in batch.slots
+    }
+    # Leave a handful outstanding, deliberately spread across batches.
+    outstanding = {
+        batch.slots[0].slot_id for batch in planned.batches
+    } | {batch.slots[1].slot_id for batch in planned.batches}
+    completed = {slot.slot_id for slot in slots if slot.slot_id not in outstanding}
+    dataset = StudyDataset(
+        manifest=study,
+        suite=suite,
+        slots=tuple(
+            SlotResult(slot, object() if slot.slot_id in completed else None, (), ())  # type: ignore[arg-type]
+            for slot in slots
+        ),
+        warnings=(),
+    )
+
+    selection = select_batches(study, suite, dataset, configuration_id="codex", mode="resume")
+
+    for batch in selection.batches:
+        for slot in batch.slots:
+            assert home[slot.slot_id] == batch.batch_id
 
 
 def test_merge_attempt_artifacts_appends_without_overwriting(tmp_path: Path) -> None:
