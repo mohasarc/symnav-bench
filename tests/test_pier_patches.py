@@ -142,3 +142,19 @@ def test_codex_node_install_falls_back_to_a_portable_build(tmp_path: Path) -> No
     assert "glibc-217" in patched
     assert "/opt/node/bin" in patched
     assert '"' not in patched.split("nvm install 22")[1].split("npm -v")[0]
+
+
+def test_runtime_sourcing_adds_the_portable_node_bin(tmp_path: Path) -> None:
+    module = write_codex_module(
+        tmp_path,
+        UNPATCHED_SNIPPET
+        + '\nPREFIX = "if [ -s ~/.nvm/nvm.sh ]; then . ~/.nvm/nvm.sh; fi; "\n',
+    )
+
+    patch_codex_nvm_install(module)
+
+    patched = module.read_text(encoding="utf-8")
+    compile(patched, str(module), "exec")
+    prefix = next(line for line in patched.splitlines() if line.startswith("PREFIX ="))
+    assert "/opt/node/bin" in prefix
+    assert prefix.index("nvm.sh; fi") < prefix.index("/opt/node/bin")

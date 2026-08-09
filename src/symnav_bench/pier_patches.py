@@ -31,8 +31,12 @@ PATCHED_NODE_INSTALL = (
 
 
 UNPATCHED_RUNTIME_SOURCING = "if [ -s ~/.nvm/nvm.sh ]; then . ~/.nvm/nvm.sh; fi"
+# Sourcing nvm is not enough on images that fell back to the portable node:
+# nvm's node cannot run there, so codex lives under /opt/node/bin and would not
+# be on PATH when the agent is invoked.
 PATCHED_RUNTIME_SOURCING = (
-    "if [ -s ~/.nvm/nvm.sh ]; then NVM_DIR=$HOME/.nvm . ~/.nvm/nvm.sh; fi"
+    "if [ -s ~/.nvm/nvm.sh ]; then NVM_DIR=$HOME/.nvm . ~/.nvm/nvm.sh; fi;"
+    " if [ -d /opt/node/bin ]; then PATH=/opt/node/bin:$PATH; export PATH; fi"
 )
 
 
